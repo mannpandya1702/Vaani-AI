@@ -18,18 +18,22 @@
 ## The Board — Use Before Merging Anything
 
 Before any non-trivial change, spawn the relevant advisor(s) via the Agent tool. Charters are in:
-- `scratchpad/board-review-aanya.md` — 🩺 Clinical CCO
-- `scratchpad/board-review-aman.md` + `board-review-aman-clinicpro-mining.md` — 🧠 AI Eng VP
-- `scratchpad/board-review-vikram.md` — 💰 VC
-- `scratchpad/board-review-priya.md` — 🎨 Design
-- `scratchpad/board-review-anand.md` — ⚖️ Counsel
+- `scratchpad/board-review-aanya.md` — 🩺 Dr. Aanya Sharma, Clinical CCO
+- `scratchpad/board-review-aman.md` + `board-review-aman-clinicpro-mining.md` — 🧠 Aman Khurana, AI Eng VP
+- `scratchpad/board-review-vikram.md` — 💰 Vikram Mehta, VC
+- `scratchpad/board-review-priya.md` — 🎨 Priya Iyer, Head of Design
+- `scratchpad/board-review-anand.md` — ⚖️ Adv. Anand Subramanian, Counsel
+- `scratchpad/board-review-kavya.md` — ✍️ Kavya Rao, Prompt Master (persona + conversational naturalness)
+- `scratchpad/board-review-arjun.md` — 🎙️ Arjun Iyengar, Voice Engineer (TTS prosody + endpointing)
 
 Re-spawn agents with `general-purpose` subagent_type and the same persona prompt as a self-contained brief.
 
 | Change touches… | Required reviewer(s) |
 |---|---|
-| Patient-facing UI / IVR script | Aanya + Priya + Anand |
-| Triage prompt / red-flag rules | Aanya + Aman |
+| Patient-facing UI / IVR script | Aanya + Priya + Anand + Kavya |
+| Voice persona / TTS settings / endpointing / latency | Arjun + Priya + Kavya |
+| Agent system prompt / firstMessage / fillers | Kavya + Aanya + Aman |
+| Triage prompt / red-flag rules | Aanya + Aman + Kavya |
 | Schema / RLS / data flow | Aman + Anand |
 | Marketing / deck / public claim | Vikram + Anand |
 | PII redaction / consent / DPDP | Anand (veto) |
