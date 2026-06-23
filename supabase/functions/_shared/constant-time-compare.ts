@@ -15,7 +15,13 @@ export function verifyBearer(
   expectedToken: string | undefined,
 ): boolean {
   if (!expectedToken) return false;
+  // 1) Authorization: Bearer <token>  (internal callers)
   const auth = req.headers.get('authorization') ?? '';
-  const bearer = auth.startsWith('Bearer ') ? auth.slice(7) : '';
-  return constantTimeEqual(bearer, expectedToken);
+  if (auth.startsWith('Bearer ')) {
+    if (constantTimeEqual(auth.slice(7), expectedToken)) return true;
+  }
+  // 2) x-vapi-secret: <token>  (VAPI server.secret on tool callbacks)
+  const vapi = req.headers.get('x-vapi-secret') ?? '';
+  if (vapi && constantTimeEqual(vapi, expectedToken)) return true;
+  return false;
 }
