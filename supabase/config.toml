@@ -1,5 +1,6 @@
 # Supabase config for Vaani-AI
-project_id = "hxgsxdtrnebpvbtdqwru"
+# Project region: ap-south-1 (Mumbai) — ABDM HDM ¶7.6 + DPDP s.16 compliant
+project_id = "kjhpmoqybqnjpqfqitqr"
 
 [api]
 enabled = true

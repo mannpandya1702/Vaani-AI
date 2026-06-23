@@ -11,7 +11,7 @@
 | `supabase db push` | Apply migrations to live Supabase |
 | `supabase db diff -f <name>` | Generate migration from schema diff |
 | `supabase functions deploy <name> --no-verify-jwt` | Deploy webhook functions |
-| `supabase gen types typescript --project-id hxgsxdtrnebpvbtdqwru > src/integrations/supabase/types.ts` | Regenerate DB types |
+| `supabase gen types typescript --project-id kjhpmoqybqnjpqfqitqr > src/integrations/supabase/types.ts` | Regenerate DB types |
 
 ---
 
@@ -125,9 +125,9 @@ ABDM ──────── Sandbox; M2/M3 roadmap
 4. Migration naming: `YYYYMMDDHHMMSS_descriptive_name.sql`
 
 ### Production Project
-- **Project ID:** `hxgsxdtrnebpvbtdqwru`
+- **Project ID:** `kjhpmoqybqnjpqfqitqr`
 - **Region:** `ap-south-1` (Mumbai) — **required for ABDM HDM ¶7.6 compliance**
-- **Edge Function URL:** `https://hxgsxdtrnebpvbtdqwru.supabase.co/functions/v1/<name>`
+- **Edge Function URL:** `https://kjhpmoqybqnjpqfqitqr.supabase.co/functions/v1/<name>`
 
 ### Functions Requiring `--no-verify-jwt` on Deploy
 All entries in `supabase/config.toml` with `verify_jwt = false`:

@@ -69,7 +69,7 @@ ABDM ──────── Sandbox; M2/M3 production roadmap
 ### Prerequisites
 - Node.js 18+ and npm
 - Supabase CLI: `npm install -g supabase`
-- A Supabase project (already provisioned: `hxgsxdtrnebpvbtdqwru`)
+- A Supabase project (already provisioned: `kjhpmoqybqnjpqfqitqr` · ap-south-1 Mumbai)
 
 ### Setup
 
@@ -82,13 +82,13 @@ cp .env.example .env.local
 # Fill in actual values in .env.local — NEVER commit this file.
 
 # 3. Link to Supabase project
-supabase link --project-ref hxgsxdtrnebpvbtdqwru
+supabase link --project-ref kjhpmoqybqnjpqfqitqr
 
 # 4. Push migrations to live Supabase
 supabase db push
 
 # 5. Generate TypeScript types from live schema
-supabase gen types typescript --project-id hxgsxdtrnebpvbtdqwru \
+supabase gen types typescript --project-id kjhpmoqybqnjpqfqitqr \
   > src/integrations/supabase/types.ts
 
 # 6. Start dev server
