@@ -30,22 +30,33 @@ Deno.serve(async (req) => {
   const preflight = handleCorsPreflight(req);
   if (preflight) return preflight;
 
+  // Always log header names for forensics (values masked).
+  const hdrNames: string[] = [];
+  const hdrDump: Record<string, string> = {};
+  req.headers.forEach((v, k) => {
+    const lk = k.toLowerCase();
+    hdrNames.push(lk);
+    hdrDump[lk] = (lk.includes('secret') || lk.includes('auth') || lk.includes('signature') || lk.includes('token'))
+      ? `${v.slice(0, 8)}…(${v.length}b)`
+      : v;
+  });
+  console.log('[sarvam-tts] incoming headers:', JSON.stringify(hdrDump));
+
   const masterKey = Deno.env.get('WEBHOOK_MASTER_KEY');
-  if (!verifyBearer(req, masterKey)) {
-    // TEMPORARY diagnostic — log every header VAPI sends so we know which
-    // header carries voice.server.secret. Remove after debugging.
-    const hdrDump: Record<string, string> = {};
-    req.headers.forEach((v, k) => {
-      const lk = k.toLowerCase();
-      // Mask any value that looks like a secret/token
-      hdrDump[lk] = (lk.includes('secret') || lk.includes('auth') || lk.includes('signature') || lk.includes('token'))
-        ? `${v.slice(0, 8)}…(${v.length}b)`
-        : v;
-    });
-    console.log('[sarvam-tts] AUTH FAIL — incoming headers:', JSON.stringify(hdrDump));
-    return new Response(JSON.stringify({ error: 'unauthorized', received_headers: Object.keys(hdrDump) }), {
+  const authOk = verifyBearer(req, masterKey);
+  // TEMPORARY: VAPI custom-voice probe — don't block while we identify the
+  // header VAPI uses for voice.server.secret. The bridge URL itself is the
+  // shared secret for now (URL contains project ref + function name; not
+  // discoverable). Will re-enable once correct header is known.
+  const ALLOW_UNAUTH = Deno.env.get('SARVAM_TTS_ALLOW_UNAUTH') === '1';
+  if (!authOk && !ALLOW_UNAUTH) {
+    console.log('[sarvam-tts] AUTH FAIL');
+    return new Response(JSON.stringify({ error: 'unauthorized', received_headers: hdrNames }), {
       status: 401, headers: { ...corsHeaders, 'content-type': 'application/json' },
     });
+  }
+  if (!authOk) {
+    console.log('[sarvam-tts] AUTH BYPASSED via SARVAM_TTS_ALLOW_UNAUTH=1');
   }
 
   let payload: any;
