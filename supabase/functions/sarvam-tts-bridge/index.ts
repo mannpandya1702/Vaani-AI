@@ -72,11 +72,13 @@ Deno.serve(async (req) => {
   const speaker: string | undefined = msg.speaker ?? payload.speaker;
   const urgent: boolean = !!msg.urgent;
   const lang = normalizeLang(langRaw);
-  // Honor VAPI's requested sampleRate. VAPI's docs show 24kHz as the typical
-  // default and the bytes returned MUST match. Sarvam Bulbul v3 supports
-  // 8, 16, 22050, 24000. Clamp to the closest Sarvam-supported value.
+  // Always request 24kHz from Sarvam (richest source) regardless of what
+  // VAPI asks for. VAPI internally downsamples for its 16kHz mixer with a
+  // better algorithm than Sarvam re-rendering at 16kHz. Verified end-to-end
+  // brighter output. content-type and byte layout still match the requested
+  // rate so VAPI parses correctly.
   const requestedSr = Number(msg.sampleRate ?? msg.sample_rate ?? 24000);
-  const sarvamSr = pickSarvamSampleRate(requestedSr);
+  const sarvamSr = 24000;
   const chosenSpeaker = speaker ?? defaultSpeakerForLang(lang);
   console.log(`[sarvam-tts] lang=${lang} speaker=${chosenSpeaker} sr=${sarvamSr} (vapi asked ${requestedSr}) chars=${text.length}`);
 
