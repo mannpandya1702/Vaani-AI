@@ -1,0 +1,8 @@
+{
+  "imports": {
+    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2.81.1",
+    "std/": "https://deno.land/std@0.208.0/"
+  },
+  "lint": { "rules": { "tags": ["recommended"] } },
+  "fmt": { "options": { "singleQuote": true, "lineWidth": 100 } }
+}

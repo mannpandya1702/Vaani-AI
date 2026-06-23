@@ -1,0 +1,101 @@
+# Supabase config for Vaani-AI
+project_id = "hxgsxdtrnebpvbtdqwru"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "storage", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 15
+
+[db.pooler]
+enabled = true
+port = 54329
+pool_mode = "transaction"
+default_pool_size = 20
+max_client_conn = 100
+
+[studio]
+enabled = true
+port = 54323
+
+[inbucket]
+enabled = true
+port = 54324
+
+[storage]
+enabled = true
+file_size_limit = "50MiB"
+
+[auth]
+enabled = true
+site_url = "http://localhost:8080"
+additional_redirect_urls = ["https://vaani.health"]
+jwt_expiry = 3600
+enable_refresh_token_rotation = true
+refresh_token_reuse_interval = 10
+enable_signup = true
+
+[auth.email]
+enable_signup = true
+enable_confirmations = false
+
+# ─── Edge Functions ─────────────────────────────────────────────
+# Functions called by external services (VAPI/Gupshup/Exotel webhooks)
+# bypass JWT — they validate WEBHOOK_MASTER_KEY instead.
+
+[functions.vapi-webhook]
+verify_jwt = false
+
+[functions.sarvam-stt-bridge]
+verify_jwt = false
+
+[functions.sarvam-tts-bridge]
+verify_jwt = false
+
+[functions.gupshup-inbound-webhook]
+verify_jwt = false
+
+[functions.gupshup-delivery-webhook]
+verify_jwt = false
+
+[functions.msg91-dlr-webhook]
+verify_jwt = false
+
+[functions.exotel-passthru-webhook]
+verify_jwt = false
+
+[functions.abdm-callback-webhook]
+verify_jwt = false
+
+[functions.call-dispatcher]
+verify_jwt = false
+
+[functions.dots-adherence-scanner]
+verify_jwt = false
+
+[functions.anc-schedule-scanner]
+verify_jwt = false
+
+[functions.medication-reminder-scanner]
+verify_jwt = false
+
+[functions.cohort-scanner]
+verify_jwt = false
+
+[functions.cohort-dispatcher]
+verify_jwt = false
+
+[functions.score-triage]
+verify_jwt = false
+
+[functions.process-call-records]
+verify_jwt = false
+
+[functions.audit-compliance-coverage]
+verify_jwt = false

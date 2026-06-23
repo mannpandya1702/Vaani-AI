@@ -1,0 +1,108 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── Vaani Brand Tokens (HSL — Tailwind expects HSL via cssVariables) ─── */
+@layer base {
+  :root {
+    /* Light mode — paper warm Indian off-white */
+    --background: 42 35% 96%;          /* #F7F4ED paper */
+    --foreground: 0 0% 10%;            /* #1A1A1A ink */
+
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 10%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 10%;
+
+    /* Primary — Vaani saffron */
+    --primary: 33 100% 55%;            /* #FF9F1C */
+    --primary-foreground: 0 0% 100%;
+
+    /* Secondary — Vaani navy */
+    --secondary: 226 62% 15%;          /* #0F1B3D */
+    --secondary-foreground: 0 0% 100%;
+
+    --muted: 42 20% 90%;
+    --muted-foreground: 0 0% 40%;
+
+    --accent: 156 64% 47%;             /* #2DBE7C green */
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 358 75% 59%;        /* #E5484D red */
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 42 20% 85%;
+    --input: 42 20% 85%;
+    --ring: 33 100% 55%;
+
+    --radius: 0.75rem;
+  }
+
+  .dark {
+    /* Dark mode — Vaani navy first */
+    --background: 226 62% 15%;         /* #0F1B3D navy */
+    --foreground: 42 35% 96%;          /* paper */
+
+    --card: 226 50% 20%;
+    --card-foreground: 42 35% 96%;
+
+    --popover: 226 55% 18%;
+    --popover-foreground: 42 35% 96%;
+
+    --primary: 33 100% 55%;            /* saffron pops on navy */
+    --primary-foreground: 226 62% 15%;
+
+    --secondary: 42 35% 96%;
+    --secondary-foreground: 226 62% 15%;
+
+    --muted: 226 40% 25%;
+    --muted-foreground: 42 20% 70%;
+
+    --accent: 156 64% 47%;
+    --accent-foreground: 226 62% 15%;
+
+    --destructive: 358 75% 59%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 226 30% 30%;
+    --input: 226 30% 30%;
+    --ring: 33 100% 55%;
+  }
+}
+
+@layer base {
+  * { @apply border-border; }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: 'rlig' 1, 'calt' 1;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Language-aware font fallback */
+  [lang='hi'], [lang='mr'] { font-family: 'Hind', 'Inter', system-ui, sans-serif; }
+  [lang='ta'] { font-family: 'Noto Sans Tamil', 'Inter', sans-serif; }
+  [lang='te'] { font-family: 'Noto Sans Telugu', 'Inter', sans-serif; }
+  [lang='kn'] { font-family: 'Noto Sans Kannada', 'Inter', sans-serif; }
+  [lang='bn'] { font-family: 'Noto Sans Bengali', 'Inter', sans-serif; }
+}
+
+/* ─── Vaani signature components ─── */
+@layer components {
+  .vaani-bindi {
+    @apply inline-block w-3 h-3 rounded-full bg-vaani-saffron;
+  }
+  .vaani-bindi-pulse {
+    @apply vaani-bindi animate-saffron-pulse;
+  }
+  .triage-dot {
+    @apply inline-block w-2.5 h-2.5 rounded-full;
+  }
+  .triage-dot-red    { @apply triage-dot bg-vaani-red animate-red-pulse; }
+  .triage-dot-amber  { @apply triage-dot bg-vaani-saffron; }
+  .triage-dot-green  { @apply triage-dot bg-vaani-green; }
+
+  .glass-card {
+    @apply bg-card/80 backdrop-blur-md border border-border/50 shadow-sm;
+  }
+}
