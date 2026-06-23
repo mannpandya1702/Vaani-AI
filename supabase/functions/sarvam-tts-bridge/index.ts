@@ -72,6 +72,13 @@ Deno.serve(async (req) => {
   const speaker: string | undefined = msg.speaker ?? payload.speaker;
   const urgent: boolean = !!msg.urgent;
   const lang = normalizeLang(langRaw);
+  // Honor VAPI's requested sampleRate. VAPI's docs show 24kHz as the typical
+  // default and the bytes returned MUST match. Sarvam Bulbul v3 supports
+  // 8, 16, 22050, 24000. Clamp to the closest Sarvam-supported value.
+  const requestedSr = Number(msg.sampleRate ?? msg.sample_rate ?? 24000);
+  const sarvamSr = pickSarvamSampleRate(requestedSr);
+  const chosenSpeaker = speaker ?? defaultSpeakerForLang(lang);
+  console.log(`[sarvam-tts] lang=${lang} speaker=${chosenSpeaker} sr=${sarvamSr} (vapi asked ${requestedSr}) chars=${text.length}`);
 
   if (!text.trim()) {
     return new Response('empty text', { status: 400, headers: corsHeaders });
@@ -80,11 +87,12 @@ Deno.serve(async (req) => {
   try {
     const wav = await sarvamTTS(text, {
       targetLang: lang,
-      speaker: speaker ?? defaultSpeakerForLang(lang),
+      speaker: chosenSpeaker,
       // Normal pace 1.05 — Sarvam docs note 1.0 = natural, 1.1 = "professional"
       // (snappier). User tested 1.0 and felt sluggish; 1.05 hits the sweet spot.
       // Aanya §13: RED-triage callbacks slow to 0.85 for rural elderly comprehension.
       pace: urgent ? 0.85 : 1.05,
+      sampleRate: sarvamSr,
     });
 
     // ── Strip RIFF/WAV header → return raw PCM s16le (Aman §6) ──
@@ -94,7 +102,7 @@ Deno.serve(async (req) => {
       status: 200,
       headers: {
         ...corsHeaders,
-        'content-type': 'audio/pcm; rate=16000; channels=1',
+        'content-type': `audio/pcm; rate=${sarvamSr}; channels=1`,
         'cache-control': 'no-store',
       },
     });
@@ -106,6 +114,15 @@ Deno.serve(async (req) => {
     });
   }
 });
+
+/** Sarvam Bulbul v3 supports {8000, 16000, 22050, 24000}. Pick the closest
+ *  >= what VAPI asked for (higher fidelity is fine; VAPI resamples freely). */
+function pickSarvamSampleRate(want: number): number {
+  const supported = [8000, 16000, 22050, 24000];
+  if (!Number.isFinite(want) || want <= 0) return 24000;
+  for (const sr of supported) if (sr >= want) return sr;
+  return 24000;
+}
 
 /**
  * Strip RIFF/WAV header — walk chunks to find 'data' chunk.

@@ -93,6 +93,7 @@ export async function sarvamTTS(text: string, opts: {
   targetLang?: string;
   speaker?: string;
   pace?: number;
+  sampleRate?: number;
 } = {}): Promise<ArrayBuffer> {
   const lang = opts.targetLang ?? 'hi-IN';
   const body: Record<string, unknown> = {
@@ -101,7 +102,7 @@ export async function sarvamTTS(text: string, opts: {
     speaker: opts.speaker ?? defaultSpeakerForLang(lang),
     model: TTS_MODEL,
     pace: opts.pace ?? 1.0,
-    sample_rate: 16000, // VAPI customVoice expects 16kHz s16le
+    sample_rate: opts.sampleRate ?? 24000, // VAPI default; caller can override
   };
   const resp = await sarvamFetch(SARVAM_TTS_URL, {
     method: 'POST',
