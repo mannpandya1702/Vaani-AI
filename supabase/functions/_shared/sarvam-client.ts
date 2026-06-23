@@ -18,8 +18,24 @@ const SARVAM_TTS_URL = Deno.env.get('SARVAM_TTS_ENDPOINT')
   ?? 'https://api.sarvam.ai/text-to-speech';
 const SARVAM_M_URL = Deno.env.get('SARVAM_M_ENDPOINT')
   ?? 'https://api.sarvam.ai/v1/chat/completions';
-const TTS_SPEAKER = Deno.env.get('SARVAM_TTS_SPEAKER') ?? 'anushka';
-const TTS_MODEL = Deno.env.get('SARVAM_TTS_MODEL') ?? 'bulbul:v2';
+// Bulbul v3 voices (per Sarvam best-practices docs, Jun 2026):
+//   Hindi female: priya (warmest), suhani
+//   Tamil female: ishita, ritu
+//   Male: shubh (Hindi), ratan (Tamil)
+// v2 deprecated voices (anushka, vidya, ...) are not used.
+const TTS_SPEAKER = Deno.env.get('SARVAM_TTS_SPEAKER') ?? 'priya';
+const TTS_MODEL = Deno.env.get('SARVAM_TTS_MODEL') ?? 'bulbul:v3';
+
+// Per-language speaker preference for didi persona
+const SPEAKER_BY_LANG: Record<string, string> = {
+  'hi-IN': 'priya',
+  'ta-IN': 'ishita',
+  'en-IN': 'priya',
+};
+
+export function defaultSpeakerForLang(lang: string): string {
+  return SPEAKER_BY_LANG[lang] ?? TTS_SPEAKER;
+}
 
 function apiKey(): string {
   const k = Deno.env.get('SARVAM_API_KEY');
@@ -69,22 +85,21 @@ export async function sarvamSTT(audio: Blob | ArrayBuffer, opts: {
 }
 
 // ── Bulbul TTS ──────────────────────────────────────────────────
+// Bulbul v3 does NOT accept pitch or loudness (rejected with 400). Only `pace`
+// is supported. Pace 1.0 = natural, per Sarvam best-practices doc.
 export async function sarvamTTS(text: string, opts: {
   targetLang?: string;
   speaker?: string;
-  pitch?: number;
   pace?: number;
-  loudness?: number;
 } = {}): Promise<ArrayBuffer> {
-  const body = {
+  const lang = opts.targetLang ?? 'hi-IN';
+  const body: Record<string, unknown> = {
     inputs: [text],
-    target_language_code: opts.targetLang ?? 'hi-IN',
-    speaker: opts.speaker ?? TTS_SPEAKER,
+    target_language_code: lang,
+    speaker: opts.speaker ?? defaultSpeakerForLang(lang),
     model: TTS_MODEL,
-    pitch: opts.pitch ?? -0.15,
-    pace: opts.pace ?? 0.9,
-    loudness: opts.loudness ?? 1.2,
-    sample_rate: 16000, // VAPI customVoice expects 16kHz
+    pace: opts.pace ?? 1.0,
+    sample_rate: 16000, // VAPI customVoice expects 16kHz s16le
   };
   const resp = await sarvamFetch(SARVAM_TTS_URL, {
     method: 'POST',

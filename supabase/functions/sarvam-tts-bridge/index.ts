@@ -1,18 +1,30 @@
 // sarvam-tts-bridge/index.ts
 // ╔════════════════════════════════════════════════════════════════╗
-// ║  Sarvam Bulbul v2 TTS bridge for VAPI's customVoice.            ║
+// ║  Sarvam Bulbul v3 TTS bridge for VAPI's custom-voice provider.  ║
 // ║                                                                 ║
-// ║  Day 2 Part 1.5 fix (Aman §6): strip RIFF/WAV header before     ║
-// ║  returning to VAPI. VAPI customVoice expects RAW PCM s16le @    ║
-// ║  16kHz — the WAV header would otherwise play as a click/pop.    ║
+// ║  Wire contract — VAPI POSTs body shaped like:                   ║
+// ║   { message: { type:'voice-request', text:'...', sampleRate:    ║
+// ║                16000, ... } }                                   ║
+// ║  We respond with RAW PCM s16le @ 16kHz, content-type            ║
+// ║  audio/pcm; rate=16000; channels=1.                             ║
 // ║                                                                 ║
-// ║  Voice persona = "Vaani Didi" (Anushka, pitch -0.15, pace 0.9, ║
-// ║  warmth +20%). Locked by Priya §6.                              ║
+// ║  Sarvam best-practices (Jun 2026): use Devanagari/native script ║
+// ║  input; Bulbul v3 supports pace only (no pitch/loudness).       ║
+// ║  Per-language speakers: hi-IN→priya, ta-IN→ishita.              ║
 // ╚════════════════════════════════════════════════════════════════╝
 
 import { corsHeaders, handleCorsPreflight } from '../_shared/cors.ts';
 import { verifyBearer } from '../_shared/constant-time-compare.ts';
-import { sarvamTTS } from '../_shared/sarvam-client.ts';
+import { sarvamTTS, defaultSpeakerForLang } from '../_shared/sarvam-client.ts';
+
+// VAPI custom-voice can pass language as 'hi', 'hi-IN', or full BCP-47.
+// Sarvam wants <lang>-IN form.
+function normalizeLang(input: string | undefined): string {
+  if (!input) return 'hi-IN';
+  const lower = input.toLowerCase();
+  if (lower.includes('-')) return lower.split('-')[0] + '-IN';
+  return lower + '-IN';
+}
 
 Deno.serve(async (req) => {
   const preflight = handleCorsPreflight(req);
@@ -30,10 +42,12 @@ Deno.serve(async (req) => {
     return new Response('bad json', { status: 400, headers: corsHeaders });
   }
 
-  const text: string = payload.message?.text ?? payload.text ?? '';
-  const lang: string = payload.message?.language ?? payload.language ?? 'hi-IN';
-  const speaker: string | undefined = payload.message?.speaker ?? payload.speaker;
-  const urgent: boolean = !!payload.message?.urgent;
+  const msg = payload.message ?? {};
+  const text: string = msg.text ?? payload.text ?? '';
+  const langRaw: string = msg.language ?? payload.language ?? 'hi-IN';
+  const speaker: string | undefined = msg.speaker ?? payload.speaker;
+  const urgent: boolean = !!msg.urgent;
+  const lang = normalizeLang(langRaw);
 
   if (!text.trim()) {
     return new Response('empty text', { status: 400, headers: corsHeaders });
@@ -42,11 +56,9 @@ Deno.serve(async (req) => {
   try {
     const wav = await sarvamTTS(text, {
       targetLang: lang,
-      speaker,
-      pitch: -0.15,
-      // Aanya §13: RED-triage callbacks slow to 0.8 for rural elderly comprehension
-      pace: urgent ? 0.8 : 0.9,
-      loudness: 1.2,
+      speaker: speaker ?? defaultSpeakerForLang(lang),
+      // Aanya §13: RED-triage callbacks slow to 0.85 for rural elderly comprehension
+      pace: urgent ? 0.85 : 1.0,
     });
 
     // ── Strip RIFF/WAV header → return raw PCM s16le (Aman §6) ──
