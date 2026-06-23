@@ -91,6 +91,15 @@ verify_jwt = false
 [functions.cohort-dispatcher]
 verify_jwt = false
 
+[functions.triage-score]
+verify_jwt = false
+
+[functions.red-flag-check]
+verify_jwt = false
+
+[functions.soap-generate]
+verify_jwt = false
+
 [functions.score-triage]
 verify_jwt = false
 
