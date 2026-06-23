@@ -32,7 +32,20 @@ Deno.serve(async (req) => {
 
   const masterKey = Deno.env.get('WEBHOOK_MASTER_KEY');
   if (!verifyBearer(req, masterKey)) {
-    return new Response('unauthorized', { status: 401, headers: corsHeaders });
+    // TEMPORARY diagnostic — log every header VAPI sends so we know which
+    // header carries voice.server.secret. Remove after debugging.
+    const hdrDump: Record<string, string> = {};
+    req.headers.forEach((v, k) => {
+      const lk = k.toLowerCase();
+      // Mask any value that looks like a secret/token
+      hdrDump[lk] = (lk.includes('secret') || lk.includes('auth') || lk.includes('signature') || lk.includes('token'))
+        ? `${v.slice(0, 8)}…(${v.length}b)`
+        : v;
+    });
+    console.log('[sarvam-tts] AUTH FAIL — incoming headers:', JSON.stringify(hdrDump));
+    return new Response(JSON.stringify({ error: 'unauthorized', received_headers: Object.keys(hdrDump) }), {
+      status: 401, headers: { ...corsHeaders, 'content-type': 'application/json' },
+    });
   }
 
   let payload: any;
