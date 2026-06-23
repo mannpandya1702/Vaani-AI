@@ -1,17 +1,21 @@
 // _shared/anthropic-client.ts
 // ╔════════════════════════════════════════════════════════════════╗
-// ║  Claude client wrapper with two non-negotiable invariants:      ║
+// ║  Claude client wrapper with non-negotiable invariants:          ║
 // ║                                                                 ║
 // ║   1. EVERY call writes a row to cross_border_transfers BEFORE   ║
-// ║      the request fires (Anand §6).                              ║
-// ║   2. The caller MUST pass `redactedText` produced by            ║
-// ║      pii-redactor.ts — raw PHI cannot be sent (Red Line #5).    ║
-// ║                                                                 ║
-// ║  We expose a thin Messages API. Prompt caching is enabled by    ║
-// ║  default on the system block to keep cost <₹2/consult.          ║
+// ║      the request fires (Anand §6). Audit insert THROWS on       ║
+// ║      failure → Claude call refused.                             ║
+// ║   2. Caller MUST pass redactionSessionToken (Red Line #5).      ║
+// ║   3. Audit row hashes the ACTUAL wire JSON body, not a          ║
+// ║      reconstructed string (Anand code-review §5).               ║
+// ║   4. After the response, region is attested from response       ║
+// ║      headers (cf-ray, anthropic-region) and audit row updated   ║
+// ║      (Anand code-review §7).                                    ║
+// ║   5. Tool-use blocks accumulate in toolUses[]; text blocks      ║
+// ║      concatenate (Aman code-review §9). Forced-JSON via tools.  ║
 // ╚════════════════════════════════════════════════════════════════╝
 
-import { auditCrossBorderTransfer } from './cross-border-audit.ts';
+import { auditCrossBorderTransfer, attestActualRegion, sha256Hex } from './cross-border-audit.ts';
 
 const ANTHROPIC_API = 'https://api.anthropic.com/v1/messages';
 const DEFAULT_MODEL = Deno.env.get('ANTHROPIC_MODEL') ?? 'claude-sonnet-4-6';
@@ -27,30 +31,32 @@ export interface ClaudeMessage {
       }>;
 }
 
+export interface ClaudeTool {
+  name: string;
+  description?: string;
+  input_schema: Record<string, unknown>;
+}
+
 export interface ClaudeCallParams {
-  /** System prompt (will be prompt-cached). */
   system: string;
-  /** Already-PII-redacted messages. */
   messages: ClaudeMessage[];
   maxTokens: number;
   temperature?: number;
-  responseFormat?: 'json' | 'text';
-  /** For audit lineage. */
   callId?: string;
   turnId?: number;
-  /** Session token from redactor — confirms redaction ran. */
   redactionSessionToken: string;
   redactionMethod?: string;
-  /** Optional tool-use schema for forced JSON. */
-  tools?: unknown[];
-  toolChoice?: 'auto' | { type: 'tool'; name: string };
+  tools?: ClaudeTool[];
+  toolChoice?: { type: 'any' } | { type: 'tool'; name: string } | { type: 'auto' };
 }
 
 export interface ClaudeResponse {
   text: string;
+  toolUses: Array<{ name: string; input: unknown }>;
   inputTokens: number;
   outputTokens: number;
-  cachedTokens?: number;
+  cachedReadTokens: number;
+  cachedWriteTokens: number;
   stopReason: string;
   raw: unknown;
 }
@@ -59,38 +65,36 @@ export async function claudeCall(params: ClaudeCallParams): Promise<ClaudeRespon
   const apiKey = Deno.env.get('ANTHROPIC_API_KEY');
   if (!apiKey) throw new Error('Missing ANTHROPIC_API_KEY');
 
-  // Concatenate the payload text we are about to send for audit hashing.
-  const payloadText = `[system]\n${params.system}\n[messages]\n` +
-    params.messages.map((m) => `${m.role}: ${typeof m.content === 'string' ? m.content : JSON.stringify(m.content)}`).join('\n');
-
-  // 1. WRITE the audit row BEFORE the request fires.
-  //    (If the request fails, the audit row stands as "we attempted".)
-  await auditCrossBorderTransfer({
-    callId: params.callId,
-    turnId: params.turnId,
-    provider: 'anthropic',
-    model: DEFAULT_MODEL,
-    region: 'us-east-1', // Anthropic API default; switch to ap-south-1 on Bedrock migration
-    regionAttestedBy: 'anthropic_api_default',
-    payloadPiiRedacted: true, // invariant: caller must have redacted
-    redactionMethod: params.redactionMethod ?? 'pii_token_map_v1',
-    redactionSessionToken: params.redactionSessionToken,
-    payloadText,
-  });
-
-  // 2. Build the request body.
+  // ── Build the EXACT wire body ─────────────────────────────────
   const body: Record<string, unknown> = {
     model: DEFAULT_MODEL,
     max_tokens: params.maxTokens,
     temperature: params.temperature ?? 0.1,
-    // Prompt-cache the static system block — ~60% savings on repeat calls.
     system: [{ type: 'text', text: params.system, cache_control: { type: 'ephemeral' } }],
     messages: params.messages,
   };
   if (params.tools) body.tools = params.tools;
   if (params.toolChoice) body.tool_choice = params.toolChoice;
 
-  // 3. Fire.
+  const wireBody = JSON.stringify(body);
+  const wireSha256 = await sha256Hex(wireBody);
+
+  // ── 1. AUDIT FIRST (Anand §6) — throws on failure ─────────────
+  await auditCrossBorderTransfer({
+    callId: params.callId,
+    turnId: params.turnId,
+    provider: 'anthropic',
+    model: DEFAULT_MODEL,
+    region: 'us-east-1', // initial assumption; overwritten by attestActualRegion below
+    regionAttestedBy: 'anthropic_api_default',
+    payloadPiiRedacted: true, // re-verified inside audit via scanForPiiLeaks
+    redactionMethod: params.redactionMethod ?? 'pii_token_map_v1',
+    redactionSessionToken: params.redactionSessionToken,
+    payloadText: wireBody,
+    precomputedSha256: wireSha256,
+  });
+
+  // ── 2. Fire ────────────────────────────────────────────────────
   const resp = await fetch(ANTHROPIC_API, {
     method: 'POST',
     headers: {
@@ -99,8 +103,20 @@ export async function claudeCall(params: ClaudeCallParams): Promise<ClaudeRespon
       'anthropic-beta': 'prompt-caching-2024-07-31',
       'content-type': 'application/json',
     },
-    body: JSON.stringify(body),
+    body: wireBody,
   });
+
+  // ── 3. Attest actual region from response headers (Anand §7) ──
+  const cfRay = resp.headers.get('cf-ray') ?? '';
+  const anthropicRegion = resp.headers.get('anthropic-region') ?? '';
+  const actualRegion = anthropicRegion || cfRay.split('-').pop() || 'unknown';
+  // Async — don't block the hot path
+  if (params.callId) {
+    // @ts-expect-error edge runtime
+    EdgeRuntime?.waitUntil?.(
+      attestActualRegion(params.callId, wireSha256, actualRegion, anthropicRegion ? 'anthropic-region_header' : 'cf-ray_header'),
+    );
+  }
 
   if (!resp.ok) {
     const errText = await resp.text();
@@ -108,18 +124,21 @@ export async function claudeCall(params: ClaudeCallParams): Promise<ClaudeRespon
   }
   const json = await resp.json();
 
-  // 4. Extract text from content blocks (could be text or tool_use).
+  // ── 4. Aggregate content blocks (Aman §9) ──────────────────────
   let text = '';
+  const toolUses: Array<{ name: string; input: unknown }> = [];
   for (const block of json.content ?? []) {
     if (block.type === 'text') text += block.text;
-    if (block.type === 'tool_use') text = JSON.stringify(block.input);
+    if (block.type === 'tool_use') toolUses.push({ name: block.name, input: block.input });
   }
 
   return {
     text,
+    toolUses,
     inputTokens: json.usage?.input_tokens ?? 0,
     outputTokens: json.usage?.output_tokens ?? 0,
-    cachedTokens: json.usage?.cache_read_input_tokens ?? 0,
+    cachedReadTokens: json.usage?.cache_read_input_tokens ?? 0,
+    cachedWriteTokens: json.usage?.cache_creation_input_tokens ?? 0,
     stopReason: json.stop_reason ?? 'unknown',
     raw: json,
   };

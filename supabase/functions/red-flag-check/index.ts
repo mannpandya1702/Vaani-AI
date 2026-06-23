@@ -2,15 +2,12 @@
 // ╔════════════════════════════════════════════════════════════════╗
 // ║  Hardcoded Red-Flag Detector — pre-LLM safety layer.            ║
 // ║                                                                 ║
-// ║  Aanya §2: ANY of 16 red flags = RED regardless of LLM verdict. ║
-// ║  Runs against the v_red_flag_lookup view (138 seeded phrases    ║
-// ║  across Hi/Ta/En × 16 categories), then escalates to Sarvam-M   ║
-// ║  for low-confidence cases.                                      ║
-// ║                                                                 ║
-// ║  Input: { call_id, turn_id?, transcript, lang }                 ║
-// ║  Output: { red_flags: RedFlagEvent[], should_halt: boolean }    ║
-// ║                                                                 ║
-// ║  Side effect: inserts rows into red_flag_events for evidence.   ║
+// ║  Day 2 Part 1.5 fixes (Aanya §8):                               ║
+// ║   - Normalize Hindi STT variants ("mein" → "me")                ║
+// ║   - Negation/temporal scrub ±40 chars window                    ║
+// ║   - Word-boundary regex for short phrases (≤4 chars / 1 token)  ║
+// ║   - Sarvam-M v2 prompt with few-shots + per-category criteria   ║
+// ║   - Output schema validation (enum-check + numeric guard)       ║
 // ╚════════════════════════════════════════════════════════════════╝
 
 import { corsHeaders, handleCorsPreflight } from '../_shared/cors.ts';
@@ -25,12 +22,39 @@ interface RedFlagHit {
   matched_phrase: string | null;
 }
 
+const KNOWN_CATEGORIES = [
+  'cardiac', 'respiratory', 'hemoptysis', 'neuro', 'stroke_befast',
+  'obstetric', 'preeclampsia_eclampsia', 'peds_danger', 'dehydration_severe',
+  'envenomation', 'rabies_exposure', 'mental_health', 'fever_high_risk',
+  'sepsis', 'gi_acute', 'metabolic_acute', 'burns', 'trauma', 'other',
+] as const;
+
 const SARVAM_M_PROMPT = `You are a clinical red-flag classifier for rural India primary care.
-Given a patient utterance, return JSON: {"red_flag": boolean, "category": string|null, "confidence": number}
-Categories: cardiac, respiratory, neuro, obstetric, peds_danger, trauma, sepsis, mental_health, envenomation, burns, gi_acute, metabolic_acute, dehydration_severe, stroke_befast, preeclampsia_eclampsia, rabies_exposure, hemoptysis, fever_high_risk
+Given a patient utterance, return JSON: {"red_flag": boolean, "category": string, "confidence": number}.
+
+Categories (use EXACTLY one of these strings):
+cardiac, respiratory, hemoptysis, neuro, stroke_befast, obstetric, preeclampsia_eclampsia,
+peds_danger, dehydration_severe, envenomation, rabies_exposure, mental_health,
+fever_high_risk, sepsis, gi_acute, metabolic_acute, burns, trauma, other.
+
 Rules:
 - If confidence < 0.85, default to red_flag=true (safety-first).
-- Set red_flag=false ONLY if you are >0.85 confident the utterance is non-emergent.`;
+- For code-switched Hindi-English (e.g. "seene mein chest pain"), classify normally.
+- Negated/past tense ("vo behosh ho gaya tha bachpan mein" = "he fainted as a child") → red_flag=false.
+
+Few-shot examples:
+User: "seene mein dard ho raha hai aur paseena bhi" → {"red_flag":true,"category":"cardiac","confidence":0.95}
+User: "saans nahi aa rahi, bahut takleef hai" → {"red_flag":true,"category":"respiratory","confidence":0.95}
+User: "khansi mein khoon aaya aaj subah" → {"red_flag":true,"category":"hemoptysis","confidence":0.95}
+User: "chehra ek taraf jhuk gaya, boli badli" → {"red_flag":true,"category":"stroke_befast","confidence":0.98}
+User: "kutte ne kaata, khoon nikla" → {"red_flag":true,"category":"rabies_exposure","confidence":0.95}
+User: "marne ka man kar raha hai" → {"red_flag":true,"category":"mental_health","confidence":0.95}
+User: "pregnancy mein sir dard aur aankhon mein dhabbe" → {"red_flag":true,"category":"preeclampsia_eclampsia","confidence":0.95}
+User: "bachcha doodh nahi pee raha do din se" → {"red_flag":true,"category":"peds_danger","confidence":0.95}
+User: "halki khansi hai do din se" → {"red_flag":false,"category":"other","confidence":0.9}
+User: "vo behosh ho gaya tha bachpan mein" → {"red_flag":false,"category":"other","confidence":0.9}`;
+
+const NEGATION_TEMPORAL = /\b(nahi|nahin|not|no|never|tha|thi|the|pehle|bachpan|saal pehle|years ago|childhood|बचपन|पहले|नहीं|था|थी|थे)\b/u;
 
 Deno.serve(async (req) => {
   const preflight = handleCorsPreflight(req);
@@ -44,18 +68,19 @@ Deno.serve(async (req) => {
   const body = await req.json().catch(() => null);
   const callId: string | undefined = body?.call_id;
   const turnId: number | undefined = body?.turn_id;
-  const transcript: string = body?.transcript ?? '';
+  const transcriptRaw: string = body?.transcript ?? '';
   const lang: string = body?.lang ?? 'hi';
   const patientId: string | undefined = body?.patient_id;
   const tenantId: string | undefined = body?.tenant_id;
 
-  if (!callId || !transcript.trim()) {
+  if (!callId || !transcriptRaw.trim()) {
     return new Response(JSON.stringify({ error: 'missing_call_id_or_transcript' }), {
       status: 400, headers: { ...corsHeaders, 'content-type': 'application/json' },
     });
   }
 
   const sb = supabaseAdmin();
+  const transcript = normalize(transcriptRaw);
   const hits: RedFlagHit[] = [];
 
   // ── Layer 1: Hardcoded phrase library (deterministic) ──────────
@@ -64,9 +89,10 @@ Deno.serve(async (req) => {
     .select('category, lang, phrase, severity_score, detection_method, min_confidence')
     .eq('lang', lang);
 
-  const lower = transcript.toLowerCase();
   for (const row of phrases ?? []) {
-    if (matchPhrase(lower, row.phrase, row.detection_method)) {
+    const phrase = normalize(row.phrase);
+    const match = matchPhrase(transcript, phrase, row.detection_method);
+    if (match.hit && !isNegated(transcript, match.idx)) {
       hits.push({
         category: row.category,
         source: 'rule',
@@ -76,24 +102,29 @@ Deno.serve(async (req) => {
     }
   }
 
-  // ── Layer 2: Sarvam-M for low-coverage / multilingual cases ────
-  // Only invoke if no rule hit AND transcript has >5 words (avoid trivials)
+  // ── Layer 2: Sarvam-M fallback ─────────────────────────────────
   if (hits.length === 0 && transcript.split(/\s+/).length > 5) {
     try {
       const llm = await sarvamM({
         messages: [
           { role: 'system', content: SARVAM_M_PROMPT },
-          { role: 'user', content: transcript },
+          { role: 'user', content: transcriptRaw }, // raw for LLM context
         ],
         temperature: 0.1,
         maxTokens: 200,
         responseFormat: 'json_object',
       });
       const parsed = JSON.parse(llm.text.match(/\{[\s\S]*\}/)?.[0] ?? '{}');
-      const conf = Number(parsed.confidence ?? 0.5);
+
+      // Schema-validate (Aman §18)
+      let conf = Number(parsed.confidence);
+      if (!Number.isFinite(conf)) conf = 0.0; // safety: treat as low conf
+      let category = String(parsed.category ?? 'other');
+      if (!KNOWN_CATEGORIES.includes(category as any)) category = 'other';
+
       if (parsed.red_flag === true || conf < 0.85) {
         hits.push({
-          category: parsed.category ?? 'other',
+          category,
           source: conf < 0.85 ? 'uncertainty_default' : 'llm',
           confidence: conf,
           matched_phrase: null,
@@ -101,7 +132,7 @@ Deno.serve(async (req) => {
       }
     } catch (e) {
       console.error('[red-flag-check] sarvam-m failed', e);
-      // Safety: on classifier failure, escalate as uncertainty default
+      // Safety: classifier failure = escalate uncertainty default
       hits.push({
         category: 'other',
         source: 'uncertainty_default',
@@ -131,19 +162,64 @@ Deno.serve(async (req) => {
   return new Response(JSON.stringify({
     red_flags: hits,
     should_halt: hits.length > 0,
-    transcript_chars: transcript.length,
+    transcript_chars: transcriptRaw.length,
   }), {
     status: 200,
     headers: { ...corsHeaders, 'content-type': 'application/json' },
   });
 });
 
-function matchPhrase(haystack: string, phrase: string, method: string): boolean {
+// ── Aanya §8 fixes ──────────────────────────────────────────────
+
+function normalize(t: string): string {
+  return t.toLowerCase()
+    .normalize('NFKD')
+    .replace(/[।,.!?]/g, ' ')
+    .replace(/\bmein\b/g, 'me')
+    .replace(/\bnahin\b/g, 'nahi')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function isNegated(haystack: string, phraseIdx: number): boolean {
+  if (phraseIdx < 0) return false;
+  // Look at ±40 chars window for negation/temporal markers
+  const window = haystack.slice(Math.max(0, phraseIdx - 40), phraseIdx);
+  return NEGATION_TEMPORAL.test(window);
+}
+
+function matchPhrase(
+  haystack: string,
+  phrase: string,
+  method: string,
+): { hit: boolean; idx: number } {
   const p = phrase.toLowerCase();
-  if (method === 'exact') return haystack.includes(p);
-  if (method === 'regex') {
-    try { return new RegExp(p, 'i').test(haystack); } catch { return haystack.includes(p); }
+  // Word-boundary regex for short phrases (≤4 chars OR 1 token)
+  if (p.length <= 4 || p.split(/\s+/).length === 1) {
+    const escaped = p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    try {
+      const re = new RegExp(`(^|\\s|[।,.!?])(${escaped})($|\\s|[।,.!?])`, 'i');
+      const m = haystack.match(re);
+      if (m && typeof m.index === 'number') {
+        // Adjust index to start of phrase, not the leading boundary
+        return { hit: true, idx: m.index + m[1].length };
+      }
+      return { hit: false, idx: -1 };
+    } catch {
+      const i = haystack.indexOf(p);
+      return { hit: i >= 0, idx: i };
+    }
   }
-  // 'semantic' falls back to substring at the deterministic layer
-  return haystack.includes(p);
+  if (method === 'regex') {
+    try {
+      const re = new RegExp(p, 'i');
+      const m = haystack.match(re);
+      return { hit: !!m, idx: m?.index ?? -1 };
+    } catch {
+      const i = haystack.indexOf(p);
+      return { hit: i >= 0, idx: i };
+    }
+  }
+  const i = haystack.indexOf(p);
+  return { hit: i >= 0, idx: i };
 }

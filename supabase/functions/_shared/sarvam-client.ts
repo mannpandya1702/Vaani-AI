@@ -27,7 +27,26 @@ function apiKey(): string {
   return k;
 }
 
-// ── Saarika STT (one-shot, non-streaming) ───────────────────────
+const STT_MODEL = Deno.env.get('SARVAM_STT_MODEL') ?? 'saaras:v3';
+
+// Exponential backoff retry on 429 + 5xx (Aman §16)
+async function sarvamFetch(url: string, init: RequestInit): Promise<Response> {
+  const backoffs = [100, 300, 900];
+  let lastResp: Response | null = null;
+  for (let i = 0; i <= backoffs.length; i++) {
+    lastResp = await fetch(url, init);
+    if (lastResp.ok) return lastResp;
+    // Don't retry 4xx (programming errors); only 429 + 5xx
+    if (lastResp.status !== 429 && lastResp.status < 500) return lastResp;
+    if (i === backoffs.length) return lastResp;
+    // Jitter ±25% to avoid thundering herd
+    const wait = backoffs[i] * (0.75 + Math.random() * 0.5);
+    await new Promise((r) => setTimeout(r, wait));
+  }
+  return lastResp!;
+}
+
+// ── Saarika/Saaras STT (one-shot, non-streaming) ────────────────
 export async function sarvamSTT(audio: Blob | ArrayBuffer, opts: {
   languageCode?: string;
   model?: string;
@@ -35,8 +54,8 @@ export async function sarvamSTT(audio: Blob | ArrayBuffer, opts: {
   const form = new FormData();
   form.append('file', new Blob([audio instanceof Blob ? await audio.arrayBuffer() : audio]));
   form.append('language_code', opts.languageCode ?? 'unknown');
-  form.append('model', opts.model ?? 'saarika:v2');
-  const resp = await fetch(SARVAM_STT_URL, {
+  form.append('model', opts.model ?? STT_MODEL);
+  const resp = await sarvamFetch(SARVAM_STT_URL, {
     method: 'POST',
     headers: { 'api-subscription-key': apiKey() },
     body: form,
@@ -62,11 +81,12 @@ export async function sarvamTTS(text: string, opts: {
     target_language_code: opts.targetLang ?? 'hi-IN',
     speaker: opts.speaker ?? TTS_SPEAKER,
     model: TTS_MODEL,
-    pitch: opts.pitch ?? -0.15, // Aanya: Vaani Didi a touch lower pitch
+    pitch: opts.pitch ?? -0.15,
     pace: opts.pace ?? 0.9,
     loudness: opts.loudness ?? 1.2,
+    sample_rate: 16000, // VAPI customVoice expects 16kHz
   };
-  const resp = await fetch(SARVAM_TTS_URL, {
+  const resp = await sarvamFetch(SARVAM_TTS_URL, {
     method: 'POST',
     headers: {
       'api-subscription-key': apiKey(),
@@ -103,7 +123,7 @@ export async function sarvamM(params: {
   if (params.responseFormat === 'json_object') {
     body.response_format = { type: 'json_object' };
   }
-  const resp = await fetch(SARVAM_M_URL, {
+  const resp = await sarvamFetch(SARVAM_M_URL, {
     method: 'POST',
     headers: {
       'authorization': `Bearer ${apiKey()}`,
