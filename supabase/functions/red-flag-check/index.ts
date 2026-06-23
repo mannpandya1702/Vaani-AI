@@ -84,22 +84,32 @@ Deno.serve(async (req) => {
   const hits: RedFlagHit[] = [];
 
   // ── Layer 1: Hardcoded phrase library (deterministic) ──────────
-  const { data: phrases } = await sb
+  const { data: phrases, error: phrasesErr } = await sb
     .from('v_red_flag_lookup')
-    .select('category, lang, phrase, severity_score, detection_method, min_confidence')
+    .select('category, lang, phrase, detection_method, min_confidence')
     .eq('lang', lang);
 
+  if (phrasesErr) {
+    console.error('[red-flag-check] phrases query failed', phrasesErr);
+  }
+
+  // Dedupe matches by (category, matched_phrase) so v_red_flag_lookup UNION
+  // doesn't produce multiple identical hits when a phrase appears in both
+  // red_flag_phrases and clinical_synonyms.
+  const seen = new Set<string>();
   for (const row of phrases ?? []) {
     const phrase = normalize(row.phrase);
     const match = matchPhrase(transcript, phrase, row.detection_method);
-    if (match.hit && !isNegated(transcript, match.idx)) {
-      hits.push({
-        category: row.category,
-        source: 'rule',
-        confidence: 1.0,
-        matched_phrase: row.phrase,
-      });
-    }
+    if (!match.hit || isNegated(transcript, match.idx)) continue;
+    const key = `${row.category}:${row.phrase}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    hits.push({
+      category: row.category,
+      source: 'rule',
+      confidence: 1.0,
+      matched_phrase: row.phrase,
+    });
   }
 
   // ── Layer 2: Sarvam-M fallback ─────────────────────────────────
@@ -111,7 +121,7 @@ Deno.serve(async (req) => {
           { role: 'user', content: transcriptRaw }, // raw for LLM context
         ],
         temperature: 0.1,
-        maxTokens: 200,
+        maxTokens: 600, // sarvam-30b emits reasoning_content; need headroom
         responseFormat: 'json_object',
       });
       const parsed = JSON.parse(llm.text.match(/\{[\s\S]*\}/)?.[0] ?? '{}');

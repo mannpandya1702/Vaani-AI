@@ -56,3 +56,6 @@ deno.lock
 # Scratchpad (already outside repo, but defensive)
 scratchpad/
 tmp/
+
+# Supabase local CLI state
+supabase/.temp/

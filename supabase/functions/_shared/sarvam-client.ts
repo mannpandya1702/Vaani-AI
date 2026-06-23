@@ -115,7 +115,8 @@ export async function sarvamM(params: {
   responseFormat?: 'json_object' | 'text';
 }): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
   const body: Record<string, unknown> = {
-    model: 'sarvam-m',
+    // sarvam-m deprecated June 2026 → use sarvam-30b (or sarvam-105b for harder tasks)
+    model: Deno.env.get('SARVAM_M_MODEL') ?? 'sarvam-30b',
     messages: params.messages,
     temperature: params.temperature ?? 0.1,
     max_tokens: params.maxTokens ?? 512,

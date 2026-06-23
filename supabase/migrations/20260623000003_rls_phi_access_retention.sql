@@ -424,10 +424,11 @@ $$;
 
 grant execute on function purge_expired_rows(boolean) to service_role;
 
--- Schedule monthly (1st of month, 02:00 IST → 20:30 UTC previous day)
+-- Schedule monthly (1st of month, 02:00 UTC).
+-- pg_cron doesn't support "last" — pick a fixed monthly time.
 select cron.schedule(
   'monthly_retention_purge',
-  '30 20 last * *',   -- last day of month 20:30 UTC = 1st 02:00 IST
+  '0 2 1 * *',   -- 02:00 UTC on the 1st of every month
   $$ select purge_expired_rows(false); $$
 );
 

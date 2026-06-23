@@ -175,8 +175,8 @@ create table consent_withdrawal_requests (
   completed_at             timestamptz,
   status                   withdrawal_status not null default 'received',
   processed_by_user_id     uuid,                        -- FK added below
-  sla_deadline             timestamptz not null
-    generated always as (received_at + interval '72 hours') stored,
+  -- 72h SLA — DEFAULT (not generated) since timestamptz+days/months is non-immutable
+  sla_deadline             timestamptz not null default (now() + interval '72 hours'),
   downstream_actions_taken jsonb not null default '[]'::jsonb,
   retention_until          date not null
     default ((now() at time zone 'Asia/Kolkata') + interval '7 years')::date,
@@ -227,8 +227,8 @@ create table data_subject_requests (
   received_at              timestamptz not null default now(),
   verified_at              timestamptz,
   verification_method      text,
-  sla_deadline             timestamptz not null
-    generated always as (received_at + interval '30 days') stored,
+  -- 30-day SLA — DEFAULT (interval '30 days' on timestamptz is non-immutable in PG)
+  sla_deadline             timestamptz not null default (now() + interval '720 hours'),
   status                   dsr_status not null default 'received',
   assigned_to              uuid,                    -- FK to mo_users added below
   fulfilled_at             timestamptz,
@@ -970,10 +970,14 @@ alter table pregnancies
   add column blood_group_typed          blood_group default 'unknown',
   add column tt_doses_given             smallint default 0,
   add column ifa_tablets_dispensed      integer default 0,
-  add column hrp_flags                  pregnancy_hrp_flag[] default '{}',
-  add column gestational_age_weeks      smallint generated always as (
-    ((current_date - lmp_date) / 7)::smallint
-  ) stored;
+  add column hrp_flags                  pregnancy_hrp_flag[] default '{}';
+
+-- gestational_age_weeks: computed in application (current_date is non-immutable).
+-- View v_pregnancy_summary will surface this; see below.
+create or replace view v_pregnancy_summary as
+select p.*,
+       ((current_date - p.lmp_date) / 7)::smallint as gestational_age_weeks
+from pregnancies p;
 
 -- Wire vitals_observations.pregnancy_id FK now that pregnancies is extended
 alter table vitals_observations
@@ -1028,6 +1032,8 @@ create trigger tg_asha_users_updated_at before update on asha_users
   for each row execute function set_updated_at();
 
 -- ── Aman §8 — Cost precision bump + new line items ──────────────
+-- Drop total_inr FIRST (it depends on the source columns we're about to alter).
+alter table call_costs drop column total_inr;
 alter table call_costs
   alter column exotel_inr           type numeric(10, 4),
   alter column sarvam_stt_inr       type numeric(10, 4),
@@ -1037,8 +1043,6 @@ alter table call_costs
   alter column sarvam_m_inr         type numeric(10, 4),
   alter column supabase_inr         type numeric(10, 4),
   alter column gupshup_inr          type numeric(10, 4);
-
-alter table call_costs drop column total_inr;
 alter table call_costs add column bedrock_surcharge_inr numeric(10, 4) default 0;
 alter table call_costs add column msg91_inr             numeric(10, 4) default 0;
 alter table call_costs add column total_inr numeric(12, 4) generated always as (
@@ -1076,11 +1080,11 @@ alter table tenants
   add column dlt_pe_id                text,
   add column dlt_registered_at        timestamptz;
 
--- ── MO indemnity active (generated col, Aanya §13) ──────────────
-alter table mo_users
-  add column indemnity_active boolean generated always as (
-    pi_insurance_expires_at >= current_date
-  ) stored;
+-- ── MO indemnity active (view, Aanya §13) ──────────────────────
+-- Cannot be generated col (current_date non-immutable); use view instead.
+create or replace view v_mo_users_with_indemnity as
+select m.*, (m.pi_insurance_expires_at >= current_date) as indemnity_active
+from mo_users m;
 
 -- ── Anand §10 — PCPNDT refusal_log NOT NULL tightening ──────────
 -- CHECK constraint enforces evidence completeness on PCPNDT category
