@@ -81,8 +81,10 @@ Deno.serve(async (req) => {
     const wav = await sarvamTTS(text, {
       targetLang: lang,
       speaker: speaker ?? defaultSpeakerForLang(lang),
-      // Aanya §13: RED-triage callbacks slow to 0.85 for rural elderly comprehension
-      pace: urgent ? 0.85 : 1.0,
+      // Normal pace 1.05 — Sarvam docs note 1.0 = natural, 1.1 = "professional"
+      // (snappier). User tested 1.0 and felt sluggish; 1.05 hits the sweet spot.
+      // Aanya §13: RED-triage callbacks slow to 0.85 for rural elderly comprehension.
+      pace: urgent ? 0.85 : 1.05,
     });
 
     // ── Strip RIFF/WAV header → return raw PCM s16le (Aman §6) ──

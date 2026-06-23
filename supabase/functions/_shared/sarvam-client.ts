@@ -26,11 +26,13 @@ const SARVAM_M_URL = Deno.env.get('SARVAM_M_ENDPOINT')
 const TTS_SPEAKER = Deno.env.get('SARVAM_TTS_SPEAKER') ?? 'priya';
 const TTS_MODEL = Deno.env.get('SARVAM_TTS_MODEL') ?? 'bulbul:v3';
 
-// Per-language speaker preference for didi persona
+// Per-language speaker preference for didi persona.
+// Hindi: pooja (user selection 2026-06-23, board-reviewed by Priya)
+// Tamil: ishita (Sarvam best-practices default)
 const SPEAKER_BY_LANG: Record<string, string> = {
-  'hi-IN': 'priya',
+  'hi-IN': 'pooja',
   'ta-IN': 'ishita',
-  'en-IN': 'priya',
+  'en-IN': 'pooja',
 };
 
 export function defaultSpeakerForLang(lang: string): string {
