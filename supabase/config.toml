@@ -110,5 +110,14 @@ verify_jwt = false
 [functions.consent-capture]
 verify_jwt = false
 
+[functions.vaani-signoff]
+verify_jwt = false
+
+[functions.cockpit-feed]
+verify_jwt = false
+
+[functions.soap-sign]
+verify_jwt = false
+
 [functions.audit-compliance-coverage]
 verify_jwt = false
