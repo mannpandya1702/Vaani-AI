@@ -171,7 +171,7 @@ See migration `20260623000001_baseline_schema.sql` for full DDL with comments.
 
 ---
 
-## The Seven-Member Board
+## The Nine-Member Board
 
 Every major decision is reviewed by the relevant advisor before merge:
 
@@ -180,10 +180,12 @@ Every major decision is reviewed by the relevant advisor before merge:
 | 🩺 **Dr. Aanya Sharma** (CCO) | Clinical protocols, red flags, SOAP, pilot safety, vernacular | Anything touching a patient |
 | 🧠 **Aman Khurana** (VP AI Eng) | Stack, latency, prompts, eval, cost, ClinicPro reuse | Tech decisions, prompts, vendors |
 | 💰 **Vikram Mehta** (VC) | Pitch, revenue model, defensibility, ask | Business model, GTM, deck |
-| 🎨 **Priya Iyer** (Head of Design) | Brand, cockpit UX, Vaani Didi voice, demo polish | UI, IVR, brand assets |
+| 🎨 **Priya Iyer** (Head of Design) | Brand, cockpit UX, Vaani voice, demo polish | UI, IVR, brand assets |
 | ⚖️ **Adv. Anand Subramanian** (Counsel) | DPDP, Telemedicine Guidelines 2020, ABDM HDM, NMC, MHCA, PCPNDT, contracts | **Any data flow, consent, public claim, contract** |
 | ✍️ **Kavya Rao** (Prompt Master) | System prompts, persona design, conversational naturalness, fillers/backchannels, instruction-following | Any agent-facing prompt or first-message script |
 | 🎙️ **Arjun Iyengar** (Voice Engineer) | TTS provider tuning, prosody (pace/pitch/SSML pauses), endpointing/VAD, latency budget, accent calibration | Voice persona, TTS params, endpointing config |
+| 📋 **Ishaan Kapoor** (Director of Program Management) | Sprint plan, scope, day-by-day Gantt, risk register, demo dress rehearsals, RACI | Timeline + scope + go/no-go for any milestone |
+| 💻 **Devansh Iyer** (Lead Full-Stack Engineer) | Implementation execution, code review, frontend + edge function architecture, build/deploy pipeline | Code merges, PR quality, architecture choices below the design layer |
 
 Detailed reviews in `scratchpad/board-review-*.md`. Master plan in `scratchpad/MASTER-PLAN-v2-LOCKED.md`.
 

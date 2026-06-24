@@ -25,6 +25,8 @@ Before any non-trivial change, spawn the relevant advisor(s) via the Agent tool.
 - `scratchpad/board-review-anand.md` — ⚖️ Adv. Anand Subramanian, Counsel
 - `scratchpad/board-review-kavya.md` — ✍️ Kavya Rao, Prompt Master (persona + conversational naturalness)
 - `scratchpad/board-review-arjun.md` — 🎙️ Arjun Iyengar, Voice Engineer (TTS prosody + endpointing)
+- `scratchpad/board-review-ishaan.md` — 📋 Ishaan Kapoor, Director of Program Management (timeline + scope + risk register)
+- `scratchpad/board-review-devansh.md` — 💻 Devansh Iyer, Lead Full-Stack Engineer (implementation execution + code quality)
 
 Re-spawn agents with `general-purpose` subagent_type and the same persona prompt as a self-contained brief.
 
@@ -34,10 +36,13 @@ Re-spawn agents with `general-purpose` subagent_type and the same persona prompt
 | Voice persona / TTS settings / endpointing / latency | Arjun + Priya + Kavya |
 | Agent system prompt / firstMessage / fillers | Kavya + Aanya + Aman |
 | Triage prompt / red-flag rules | Aanya + Aman + Kavya |
-| Schema / RLS / data flow | Aman + Anand |
+| Schema / RLS / data flow | Aman + Anand + Devansh |
 | Marketing / deck / public claim | Vikram + Anand |
 | PII redaction / consent / DPDP | Anand (veto) |
 | Cost / pricing / unit economics | Vikram + Aman |
+| Frontend / cockpit UI / ASHA app | Devansh + Priya |
+| Sprint plan / scope cuts / demo readiness | Ishaan + Vikram + Devansh |
+| Code implementation / PR review | Devansh + Aman |
 
 ---
 
