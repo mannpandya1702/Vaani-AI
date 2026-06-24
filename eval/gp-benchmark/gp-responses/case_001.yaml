@@ -1,0 +1,24 @@
+# Synthetic junior-GP response for benchmark demonstration.
+# Real GP scoring is blocked on volunteer recruitment (post-pilot).
+# This response is hand-written to represent a typical junior-GP decision
+# pattern based on Apollo / Manipal junior consultant focus-group input.
+
+__synthetic__: true
+__author__: "synthetic_junior_gp_v1"
+case_id: case_001
+band: RED
+presumptive_screening_label: acs_suspect
+red_flag_categories: [cardiac]
+differential_list:
+  - label: ACS / STEMI
+    likelihood: high
+    rationale: "65yo male, crushing central chest pain, diaphoresis, left-arm radiation, 1h duration"
+  - label: Aortic dissection
+    likelihood: medium
+    rationale: "Sudden onset chest pain — should be ruled out clinically"
+  - label: Pulmonary embolism
+    likelihood: low
+    rationale: "Dyspnea present, but pain character classic for cardiac"
+recommended_action: "Call 108 immediately. Aspirin chewable 300mg if not contraindicated. Transfer to cath-lab capable facility."
+confidence: 0.90
+notes_for_scorer: "Even with limited info, this is a textbook ACS presentation. No reasonable junior GP would miss this."

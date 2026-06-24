@@ -1,0 +1,25 @@
+id: case_002
+title: "Acute breathlessness with wheeze — 45yo female asthma exacerbation"
+clinical_stage: pre_visit_capture
+patient:
+  age_years: 45
+  sex: F
+  preferred_language: hi
+  pregnancy_status: not_applicable
+transcript:
+  - role: assistant
+    text: "नमस्ते जी, वाणी बात कर रहे हैं। क्या तकलीफ़ है?"
+  - role: user
+    text: "बहुत साँस फूल रही है, घरघराहट हो रही है, बात भी मुश्किल से कर पा रही हूँ"
+  - role: assistant
+    text: "ओह… पहले कभी ऐसा हुआ है?"
+  - role: user
+    text: "हाँ अस्थमा है मुझे, इन्हेलर लगा रही हूँ पर फ़ायदा नहीं हो रहा"
+expected:
+  band: RED
+  red_flag_categories: [respiratory]
+  presumptive_label: [asthma_exacerbation, respiratory]
+  confidence_min: 0.85
+  recommended_action_must_contain: ["108"]
+  recommended_action_must_not_contain: ["paracetamol", "diagnosis"]
+  needs_mo_review: true

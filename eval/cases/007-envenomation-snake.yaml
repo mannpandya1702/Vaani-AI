@@ -1,0 +1,24 @@
+id: case_007
+title: "Snake bite in field — 38yo male farmer, fang marks + swelling"
+clinical_stage: pre_visit_capture
+patient:
+  age_years: 38
+  sex: M
+  preferred_language: hi
+transcript:
+  - role: assistant
+    text: "नमस्ते जी, वाणी बात कर रहे हैं। क्या तकलीफ़ है?"
+  - role: user
+    text: "खेत में काम करते वक्त साँप ने काटा है, पैर सूज रहा है"
+  - role: assistant
+    text: "अरे… कितनी देर पहले?"
+  - role: user
+    text: "बीस मिनट हो गए। दो दाँत के निशान भी दिख रहे हैं"
+expected:
+  band: RED
+  red_flag_categories: [envenomation]
+  presumptive_label: [snake_envenomation, envenomation]
+  confidence_min: 0.85
+  recommended_action_must_contain: ["108"]
+  recommended_action_must_not_contain: ["diagnosis"]
+  needs_mo_review: true

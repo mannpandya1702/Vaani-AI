@@ -1,0 +1,25 @@
+id: case_008
+title: "Geriatric atypical sepsis — 72yo female, afebrile delirium + reduced intake"
+clinical_stage: pre_visit_capture
+patient:
+  age_years: 72
+  sex: F
+  preferred_language: hi
+  pregnancy_status: not_applicable
+transcript:
+  - role: assistant
+    text: "नमस्ते जी, वाणी बात कर रहे हैं। क्या तकलीफ़ है?"
+  - role: user
+    text: "अम्मा बहुत कमज़ोर हैं, ठीक से बात नहीं कर पा रहीं, खाना भी नहीं खा रहीं"
+  - role: assistant
+    text: "ओह… कब से ऐसा है?"
+  - role: user
+    text: "दो दिन से। बुख़ार नहीं है पर बहुत सुस्त हैं, आज तो पहचान भी नहीं रहीं"
+expected:
+  band: RED
+  red_flag_categories: [sepsis, neuro]
+  presumptive_label: [pneumonia_suspect, uti, dka_suspect]
+  confidence_min: 0.75
+  recommended_action_must_contain: ["108"]
+  recommended_action_must_not_contain: ["diagnosis"]
+  needs_mo_review: true

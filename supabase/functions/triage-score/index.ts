@@ -73,6 +73,28 @@ This block exists so the system prompt exceeds Anthropic's 1024-token cache mini
 
 Use the emit_triage tool to return your output.`;
 
+// Enums constrained at the JSON-Schema level so Claude tool-use can't drift
+// to "other"-style fallback. Eval pass demonstrated this is essential —
+// before constraints, every case returned ["other"] for categories +
+// "other" for presumptive_label, killing red-flag recall.
+const RED_FLAG_CATEGORIES = [
+  'cardiac', 'respiratory', 'hemoptysis', 'neuro', 'stroke_befast',
+  'obstetric', 'preeclampsia_eclampsia', 'peds_danger', 'dehydration_severe',
+  'envenomation', 'rabies_exposure', 'mental_health', 'fever_high_risk',
+  'sepsis', 'gi_acute', 'metabolic_acute', 'burns', 'trauma', 'other',
+];
+const PRESUMPTIVE_LABELS = [
+  'acs_suspect', 'atypical_acs_suspect', 'stroke_suspect',
+  'asthma_exacerbation', 'pneumonia_suspect', 'pulmonary_tb_suspect',
+  'hemoptysis_workup', 'dengue_suspect', 'malaria_suspect', 'typhoid_suspect',
+  'uti', 'gastroenteritis', 'peritonitis_suspect', 'dka_suspect',
+  'hypoglycemia', 'seizure_workup', 'preeclampsia_suspect', 'pph_suspect',
+  'anc_routine', 'imci_pneumonia', 'imci_diarrhea_severe',
+  'imci_severe_malnutrition', 'snake_envenomation', 'rabies_pep_required',
+  'suicidal_ideation_active', 'mental_health_routine', 'minor_uri', 'minor_ams',
+  'minor_dermatitis', 'pcpndt_refusal_required', 'unspecified', 'other',
+];
+
 const TRIAGE_TOOL = {
   name: 'emit_triage',
   description: 'Emit the triage decision for this call.',
@@ -80,8 +102,11 @@ const TRIAGE_TOOL = {
     type: 'object',
     properties: {
       band: { type: 'string', enum: ['RED', 'AMBER', 'GREEN'] },
-      presumptive_label: { type: 'string' },
-      red_flag_categories: { type: 'array', items: { type: 'string' } },
+      presumptive_label: { type: 'string', enum: PRESUMPTIVE_LABELS },
+      red_flag_categories: {
+        type: 'array',
+        items: { type: 'string', enum: RED_FLAG_CATEGORIES },
+      },
       confidence: { type: 'number', minimum: 0, maximum: 1 },
       reasoning: { type: 'string' },
       summary_en: { type: 'string' },

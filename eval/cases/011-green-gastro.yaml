@@ -1,0 +1,23 @@
+id: case_011
+title: "GREEN — 22yo male, mild gastroenteritis, hydrated"
+clinical_stage: pre_visit_capture
+patient:
+  age_years: 22
+  sex: M
+  preferred_language: hi
+transcript:
+  - role: assistant
+    text: "नमस्ते जी, वाणी बात कर रहे हैं। क्या तकलीफ़ है?"
+  - role: user
+    text: "एक दिन से दो-तीन बार पतले दस्त हुए हैं, पेट में हल्का दर्द"
+  - role: assistant
+    text: "अच्छा… पानी पी रहे हैं?"
+  - role: user
+    text: "हाँ ORS पी रहा हूँ, उल्टी नहीं है, बुख़ार नहीं"
+expected:
+  band: GREEN
+  red_flag_categories: []
+  presumptive_label: gastroenteritis
+  confidence_min: 0.7
+  recommended_action_must_not_contain: ["108", "diagnosis"]
+  needs_mo_review: false

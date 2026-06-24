@@ -119,5 +119,8 @@ verify_jwt = false
 [functions.soap-sign]
 verify_jwt = false
 
+[functions.visit-transcribe]
+verify_jwt = false
+
 [functions.audit-compliance-coverage]
 verify_jwt = false

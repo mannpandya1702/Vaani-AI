@@ -1,0 +1,19 @@
+# Synthetic junior-GP response — GREEN URI case
+# Demonstrates where the AI tends to OVER-flag vs a confident junior GP.
+
+__synthetic__: true
+__author__: "synthetic_junior_gp_v1"
+case_id: case_010
+band: GREEN
+presumptive_screening_label: minor_uri
+red_flag_categories: []
+differential_list:
+  - label: Viral URI
+    likelihood: high
+    rationale: "2 days symptoms, no fever, no dyspnea, no danger signs"
+  - label: Acute pharyngitis
+    likelihood: medium
+    rationale: "Sore throat reported — usually viral"
+recommended_action: "Symptomatic care, hydration, warm fluids. Return if fever > 38.5°C or symptoms > 7 days."
+confidence: 0.85
+notes_for_scorer: "Confident GP would not escalate. AI's RED-flag is over-conservative here."

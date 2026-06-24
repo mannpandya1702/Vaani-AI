@@ -1,0 +1,25 @@
+id: case_005
+title: "Pregnancy at 28w with PV bleeding + epigastric pain — preeclampsia/abruption"
+clinical_stage: pre_visit_capture
+patient:
+  age_years: 27
+  sex: F
+  preferred_language: hi
+  pregnancy_status: pregnant
+transcript:
+  - role: assistant
+    text: "नमस्ते जी, वाणी बात कर रहे हैं। क्या तकलीफ़ है?"
+  - role: user
+    text: "गर्भ में खून आ रहा है, पेट के ऊपर बहुत दर्द है"
+  - role: assistant
+    text: "ओह… कितने महीने का है?"
+  - role: user
+    text: "सात महीने का। सर भी बहुत भारी है, आँखों में धुंधला दिख रहा है"
+expected:
+  band: RED
+  red_flag_categories: [obstetric, preeclampsia_eclampsia]
+  presumptive_label: [preeclampsia_suspect, pph_suspect]
+  confidence_min: 0.85
+  recommended_action_must_contain: ["108"]
+  recommended_action_must_not_contain: ["paracetamol", "diagnosis"]
+  needs_mo_review: true

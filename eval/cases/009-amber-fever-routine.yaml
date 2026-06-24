@@ -1,0 +1,23 @@
+id: case_009
+title: "AMBER — 35yo male, fever 3 days, body ache, no danger signs"
+clinical_stage: pre_visit_capture
+patient:
+  age_years: 35
+  sex: M
+  preferred_language: hi
+transcript:
+  - role: assistant
+    text: "नमस्ते जी, वाणी बात कर रहे हैं। क्या तकलीफ़ है?"
+  - role: user
+    text: "तीन दिन से बुख़ार है, बदन में दर्द है"
+  - role: assistant
+    text: "अच्छा… कितनी ज़्यादा है?"
+  - role: user
+    text: "एक सौ एक डिग्री के आसपास। साँस ठीक है, उल्टी नहीं हुई"
+expected:
+  band: AMBER
+  red_flag_categories: []
+  presumptive_label: [dengue_suspect, malaria_suspect, typhoid_suspect]
+  confidence_min: 0.6
+  recommended_action_must_not_contain: ["108", "diagnosis", "paracetamol"]
+  needs_mo_review: true

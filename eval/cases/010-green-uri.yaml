@@ -1,0 +1,24 @@
+id: case_010
+title: "GREEN — 28yo female, mild URI 2 days, no fever, no danger"
+clinical_stage: pre_visit_capture
+patient:
+  age_years: 28
+  sex: F
+  preferred_language: hi
+  pregnancy_status: not_applicable
+transcript:
+  - role: assistant
+    text: "नमस्ते जी, वाणी बात कर रहे हैं। क्या तकलीफ़ है?"
+  - role: user
+    text: "हल्की खाँसी और जुक़ाम है, गला थोड़ा खराब है"
+  - role: assistant
+    text: "अच्छा… कब से?"
+  - role: user
+    text: "दो दिन से। बुख़ार नहीं है, साँस ठीक है"
+expected:
+  band: GREEN
+  red_flag_categories: []
+  presumptive_label: minor_uri
+  confidence_min: 0.7
+  recommended_action_must_not_contain: ["108", "diagnosis", "amoxicillin"]
+  needs_mo_review: false
