@@ -84,23 +84,27 @@ Deno.serve(async (req) => {
   const hits: RedFlagHit[] = [];
 
   // ── Layer 1: Hardcoded phrase library (deterministic) ──────────
+  // Migration 008 added requires_qualifier[]. A phrase fires RED only when
+  // either (a) requires_qualifier is empty (unconditional — chest pain,
+  // stroke, snake bite, suicidal ideation), or (b) at least one of its
+  // qualifier tokens co-occurs anywhere in the transcript.
   const { data: phrases, error: phrasesErr } = await sb
     .from('v_red_flag_lookup')
-    .select('category, lang, phrase, detection_method, min_confidence')
+    .select('category, lang, phrase, detection_method, min_confidence, requires_qualifier')
     .eq('lang', lang);
 
   if (phrasesErr) {
     console.error('[red-flag-check] phrases query failed', phrasesErr);
   }
 
-  // Dedupe matches by (category, matched_phrase) so v_red_flag_lookup UNION
-  // doesn't produce multiple identical hits when a phrase appears in both
-  // red_flag_phrases and clinical_synonyms.
   const seen = new Set<string>();
   for (const row of phrases ?? []) {
     const phrase = normalize(row.phrase);
     const match = matchPhrase(transcript, phrase, row.detection_method);
     if (!match.hit || isNegated(transcript, match.idx)) continue;
+    // Qualifier gate (migration 008)
+    const requires: string[] = Array.isArray(row.requires_qualifier) ? row.requires_qualifier : [];
+    if (requires.length > 0 && !qualifierPresent(transcript, requires)) continue;
     const key = `${row.category}:${row.phrase}`;
     if (seen.has(key)) continue;
     seen.add(key);
@@ -118,37 +122,39 @@ Deno.serve(async (req) => {
       const llm = await sarvamM({
         messages: [
           { role: 'system', content: SARVAM_M_PROMPT },
-          { role: 'user', content: transcriptRaw }, // raw for LLM context
+          { role: 'user', content: transcriptRaw },
         ],
         temperature: 0.1,
-        maxTokens: 600, // sarvam-30b emits reasoning_content; need headroom
+        maxTokens: 600,
         responseFormat: 'json_object',
       });
       const parsed = JSON.parse(llm.text.match(/\{[\s\S]*\}/)?.[0] ?? '{}');
 
-      // Schema-validate (Aman §18)
       let conf = Number(parsed.confidence);
-      if (!Number.isFinite(conf)) conf = 0.0; // safety: treat as low conf
+      if (!Number.isFinite(conf)) conf = 0.0;
       let category = String(parsed.category ?? 'other');
       if (!KNOWN_CATEGORIES.includes(category as any)) category = 'other';
 
-      if (parsed.red_flag === true || conf < 0.85) {
+      // Devansh §1: do NOT halt on uncertainty_default. Only halt when
+      // Sarvam-M is HIGH-confidence positive AND it named a real category.
+      // The previous behaviour ("conf<0.85 → push to hits") cascaded into
+      // forceRedBand on every routine GREEN case, which the eval surfaced.
+      if (parsed.red_flag === true && conf >= 0.85 && category !== 'other') {
         hits.push({
           category,
-          source: conf < 0.85 ? 'uncertainty_default' : 'llm',
+          source: 'llm',
           confidence: conf,
           matched_phrase: null,
         });
       }
     } catch (e) {
       console.error('[red-flag-check] sarvam-m failed', e);
-      // Safety: classifier failure = escalate uncertainty default
-      hits.push({
-        category: 'other',
-        source: 'uncertainty_default',
-        confidence: 0.0,
-        matched_phrase: null,
-      });
+      // Devansh §1 + Aanya safety review: Sarvam-M failure does NOT force
+      // RED. The patient hasn't said anything our deterministic rules
+      // matched, so the right behaviour is to let triage-score's Claude
+      // layer make the call. Earlier "push to hits on failure" turned
+      // every Sarvam-M outage into a false-positive RED — the eval
+      // surfaced this as the dominant band-match failure mode.
     }
   }
 
@@ -178,6 +184,71 @@ Deno.serve(async (req) => {
     headers: { ...corsHeaders, 'content-type': 'application/json' },
   });
 });
+
+// ── Migration 008: qualifier-gate keyword bank ─────────────────
+// Each qualifier label maps to a set of Devanagari / Romanized / English
+// markers. When a phrase carries `requires_qualifier`, the gate fires
+// only if at least one of these markers appears anywhere in the
+// (normalised) transcript.
+const QUALIFIER_MARKERS: Record<string, string[]> = {
+  chest_pain:        ['सीने में दर्द', 'छाती में दर्द', 'दिल में दर्द', 'seenae mein dard', 'chest pain', 'chaati'],
+  breath_diff:       ['साँस नहीं', 'साँस फूल', 'दम घुट', 'saans nahi', 'breathless', 'dyspnea'],
+  jaw_pain:          ['जबड़े में दर्द', 'jaw pain', 'jaw'],
+  diaphoresis:       ['पसीना बहुत', 'paseena bahut', 'sweating profuse'],
+  speech_difficulty: ['बात नहीं', 'बात मुश्किल', 'difficulty speaking', 'unable to speak'],
+  inhaler_failed:    ['इन्हेलर से फ़ायदा नहीं', 'inhaler nahi kar raha', 'inhaler not working'],
+  accessory_use:     ['accessory muscle', 'मांसपेशी', 'retraction'],
+  peds_under_5:      ['डेढ़ साल', 'दो साल', 'तीन साल', 'चार साल', '1 year', '2 years', '3 years', '4 years', 'months old', 'महीने'],
+  no_feed:           ['दूध नहीं पी रहा', 'doodh nahi pee', 'not feeding', 'wont eat', 'खाना नहीं'],
+  fever_high:        ['तेज़ बुख़ार', 'बहुत बुख़ार', 'high fever', '102', '103', '104', 'एक सौ दो', 'एक सौ तीन', 'एक सौ चार'],
+  respiratory:       ['साँस', 'खाँसी', 'breathing', 'cough', 'wheeze', 'घरघराहट'],
+  snake_marks:       ['साँप', 'सर्प', 'snake', 'काटा'],
+  fang_marks:        ['दाँत के निशान', 'fang marks', 'two punctures', 'दो दाँत'],
+  severe_pain:       ['बहुत दर्द', 'severe pain', 'तेज़ दर्द', 'unbearable pain'],
+  fast_progression:  ['तेज़ी से', 'मिनट', 'fast', 'rapidly', 'minutes'],
+  loc:               ['बेहोश', 'unconscious', 'loc', 'lost consciousness'],
+  head_injury:       ['सिर', 'head injury', 'head trauma'],
+  major_bleed:       ['खून बहुत', 'bleeding heavily', 'major bleed'],
+  ams:               ['पहचान नहीं', 'भ्रम', 'confused', 'altered mental', 'AMS'],
+  elderly:           ['पैंसठ', 'सत्तर', 'बहुत बूढ़े', 'पचहत्तर', 'eighty', 'seventy', '65', '70', '75', '80'],
+  hypotension:       ['बहुत कम bp', 'low bp', 'hypotensive', 'fainted'],
+  pregnancy:         ['गर्भ', 'pregnancy', 'pregnant', 'gestation', 'month', 'महीने का', 'सप्ताह'],
+  abdominal_pain:    ['पेट में दर्द', 'पेट दर्द', 'abdominal pain', 'belly pain'],
+  headache_severe:   ['सर भारी', 'सर बहुत', 'severe headache', 'सिर दर्द बहुत'],
+  visual_changes:    ['धुंधला', 'blurred', 'visual change', 'धब्बे'],
+  large_area:        ['बड़ी जलन', 'large burn', 'extensive', '20%', '30%'],
+  face_neck:         ['चेहरा', 'गर्दन', 'face', 'neck', 'face burn'],
+  airway:            ['airway', 'gasping', 'stridor', 'घरघराहट'],
+  hot_liquid:        ['गरम पानी', 'गरम तेल', 'hot water', 'hot oil', 'scalding'],
+  guarding:          ['guarding', 'पेट सख्त', 'rigid abdomen'],
+  rigid_abdomen:     ['पेट सख्त', 'rigid abdomen', 'board-like'],
+  vomiting:          ['उल्टी', 'vomiting', 'vomited'],
+  fever:             ['बुख़ार', 'fever', 'temperature'],
+  high_fever:        ['तेज़ बुख़ार', '102', '103', '104', 'high fever'],
+  convulsion:        ['झटके', 'दौरा', 'convulsion', 'seizure', 'fits'],
+  rash_petechiae:    ['rash', 'चकत्ते', 'दाने', 'petechiae'],
+  duration_long:     ['एक हफ़्ता', 'सात दिन', 'दस दिन', 'week', 'many days'],
+  lethargy:          ['सुस्त', 'lethargy', 'lethargic', 'drowsy'],
+  hemoptysis:        ['खाँसी में खून', 'खून थूका', 'hemoptysis', 'blood in cough'],
+  dyspnea:           ['साँस नहीं', 'breathless', 'dyspnea', 'sob'],
+  weight_loss:       ['वज़न कम', 'weight loss', 'wasting'],
+  dehydration:       ['पानी कम', 'सूखा मुँह', 'dehydration', 'dry mouth'],
+  blood_in_stool:    ['खून के साथ', 'blood in stool', 'मल में खून'],
+  high_volume:       ['बहुत बार', 'many times', '8 baar', '10 baar'],
+  peds:              ['बच्चा', 'बच्ची', 'months', 'महीने', 'years old', 'साल का', 'baby', 'child'],
+};
+
+function qualifierPresent(transcript: string, qualifiers: string[]): boolean {
+  const haystack = transcript; // already normalized by caller
+  for (const q of qualifiers) {
+    const markers = QUALIFIER_MARKERS[q];
+    if (!markers || markers.length === 0) continue;
+    for (const m of markers) {
+      if (haystack.includes(normalize(m))) return true;
+    }
+  }
+  return false;
+}
 
 // ── Aanya §8 fixes ──────────────────────────────────────────────
 

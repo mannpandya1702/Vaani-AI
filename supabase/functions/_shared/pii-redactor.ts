@@ -55,7 +55,7 @@ const INDIA_LOCATIONS: ReadonlySet<string> = new Set([
  */
 export async function redactPII(
   rawText: string,
-  callId: string,
+  callId: string | null,
   hints: {
     name?: string;
     phone_e164?: string;
@@ -63,6 +63,10 @@ export async function redactPII(
     village?: string;
   } = {},
 ): Promise<RedactedPayload> {
+  // Anchor a stable string for token generation even when no call exists yet
+  // (e.g. visit-transcribe walks in with raw audio, no call row). The FK on
+  // pii_token_map.call_id is nullable so we only persist call_id when real.
+  const tokenAnchor = callId ?? `ephemeral-${crypto.randomUUID()}`;
   let text = rawText;
   const tokenMap: Record<string, string> = {};
   const counter = { NAME: 0, PHONE: 0, ABHA: 0, AADHAAR: 0, EMAIL: 0, PINCODE: 0, LOCATION: 0 };
@@ -180,21 +184,21 @@ export async function redactPII(
   }
 
   // ── 3. Generate session token (16 hex — Anand §4) + persist ────
-  const sessionToken = await generateSessionToken(callId, 0);
+  const sessionToken = await generateSessionToken(tokenAnchor, 0);
   const sb = supabaseAdmin();
   const { error } = await sb.from('pii_token_map').insert({
     session_token: sessionToken,
-    call_id: callId,
+    call_id: callId, // nullable in DB; FK satisfied only when real call
     token_map: tokenMap,
   });
 
   if (error) {
     // Unique-violation retry (extremely rare with 64-bit token)
     if (String(error.message).includes('duplicate') || String(error.code) === '23505') {
-      const retryToken = await generateSessionToken(callId, 1);
+      const retryToken = await generateSessionToken(tokenAnchor, 1);
       const retry = await sb.from('pii_token_map').insert({
         session_token: retryToken,
-        call_id: callId,
+        call_id: callId, // nullable in DB; FK satisfied only when real call
         token_map: tokenMap,
       });
       if (retry.error) {

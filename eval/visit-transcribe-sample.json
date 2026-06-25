@@ -1,0 +1,12 @@
+{
+  "demo_purpose": "Stage 2 (in-visit transcription) + Stage 4 (low-cost STT with diarization) proof",
+  "audio_duration_sec": 30.337563,
+  "wall_clock_latency_ms": 4311,
+  "detected_language": null,
+  "transcript_speaker_labelled": "DOCTOR: अंदर आइए. बैठिए. What's bothering you today?\nPATIENT: Doctor साहब, मुझे तीन दिन से बुखार है और बहुत body pain है.\nDOCTOR: How much fever? Did you check?\nPATIENT: एक सौ दो degree था कल रात. आज सुबह headache भी था.\nDOCTOR: Vomiting, loose motion, rash anywhere?\nPATIENT: नहीं doctor, बस कमज़ोरी है.\nDOCTOR: Ok, we will check CBC, dengue NSA, malaria smear, take paracetamol पांच सौ milligram three times. Drink ORS, come back if fever crosses 103 or rash appears.",
+  "cost_inr_for_this_clip": 0.1805,
+  "cost_inr_per_min": 0.3569,
+  "stage_4_cap_inr_per_min": 1.0,
+  "note_about_emr_step": "Claude tool-forced EMR extraction (ICD-10/11 + meds + investigations) runs on this transcript. Demo artifact pending Anthropic API credit top-up.",
+  "speakers_detected": 2
+}

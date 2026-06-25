@@ -28,13 +28,42 @@ import { verifyBearer } from '../_shared/constant-time-compare.ts';
 import { supabaseAdmin } from '../_shared/supabase-admin.ts';
 import { sarvamTTS } from '../_shared/sarvam-client.ts';
 
-// Per-language soul message. Keep them SHORT — this is the patent moment;
-// the silence after it lands matters more than the words.
-const SOUL_MESSAGE: Record<string, string> = {
+// Per-language opening line. Followed in turn by the doctor's PLAN field
+// from soap_notes (verbatim, the RMP-authored non-drug instructions),
+// then a closing reassurance. Stage 5 architecture: Vaani is the delivery
+// layer for the doctor's plan — NOT the source. Anand-clean.
+const SOUL_OPENER: Record<string, string> = {
+  hi: 'नमस्ते। डॉक्टर साहब ने आपकी रिपोर्ट देख ली है। उनकी सलाह सुनिए — ',
+  ta: 'வணக்கம். டாக்டர் உங்கள் விவரத்தைப் பார்த்துவிட்டார். அவரின் ஆலோசனை கேளுங்கள் — ',
+  en: 'Hello. The doctor has reviewed your report. Here is their plan — ',
+};
+const SOUL_CLOSER: Record<string, string> = {
+  hi: ' — आराम कीजिए, हम आपके साथ हैं।',
+  ta: ' — ஓய்வு எடுங்கள், நாங்கள் உங்களுடன் இருக்கிறோம்.',
+  en: ' — rest well, we are with you.',
+};
+// Fallback (short opening) if SOAP plan is empty.
+const SOUL_FALLBACK: Record<string, string> = {
   hi: 'नमस्ते। डॉक्टर साहब ने आपकी रिपोर्ट देख ली है। आराम कीजिए — हम आपके साथ हैं।',
   ta: 'வணக்கம். டாக்டர் உங்கள் விவரத்தைப் பார்த்துவிட்டார். ஓய்வு எடுங்கள் — நாங்கள் உங்களுடன் இருக்கிறோம்.',
   en: 'Hello. The doctor has reviewed your report. Rest well — we are with you.',
 };
+
+/** Trim Plan to a callback-friendly chunk (≤200 chars, full sentence). */
+function trimPlan(plan: string, maxChars = 200): string {
+  if (!plan) return '';
+  const cleaned = plan.replace(/\s+/g, ' ').trim();
+  if (cleaned.length <= maxChars) return cleaned;
+  // Cut at the nearest sentence boundary under maxChars
+  const cut = cleaned.slice(0, maxChars);
+  const lastStop = Math.max(
+    cut.lastIndexOf('।'),
+    cut.lastIndexOf('.'),
+    cut.lastIndexOf('!'),
+    cut.lastIndexOf('?'),
+  );
+  return lastStop > maxChars / 2 ? cut.slice(0, lastStop + 1).trim() : cut.trim() + '…';
+}
 
 const SARVAM_LANG_MAP: Record<string, string> = {
   hi: 'hi-IN',
@@ -74,10 +103,10 @@ Deno.serve(async (req) => {
 
   const sb = supabaseAdmin();
 
-  // ── Step 1: Verify SOAP exists + signed ────────────────────
+  // ── Step 1: Verify SOAP exists + signed (and read the plan) ──
   const { data: soap, error: soapErr } = await sb
     .from('soap_notes')
-    .select('id, call_id, patient_id, tenant_id, lang, mo_signed_at, mo_user_id')
+    .select('id, call_id, patient_id, tenant_id, lang, mo_signed_at, mo_user_id, plan')
     .eq('id', soapId)
     .single();
   if (soapErr || !soap) return jsonErr(404, 'soap_not_found', soapErr?.message);
@@ -110,7 +139,14 @@ Deno.serve(async (req) => {
     .single();
   const lang = (patient?.preferred_language ?? soap.lang ?? 'hi') as string;
   const phone = patient?.phone_e164 ?? '+919999999999'; // demo fallback
-  const message = SOUL_MESSAGE[lang] ?? SOUL_MESSAGE.hi;
+  // Stage 5 reframe: the soul callback is the delivery layer for the
+  // doctor's plan (read verbatim from soap_notes.plan, RMP-authored).
+  // No drug names — soap-generate's contract keeps drugs in
+  // mo_only_drug_hints, so plan is patient-safe to speak aloud.
+  const planSnippet = trimPlan(String((soap as { plan?: string }).plan ?? ''));
+  const message = planSnippet
+    ? `${SOUL_OPENER[lang] ?? SOUL_OPENER.hi}${planSnippet}${SOUL_CLOSER[lang] ?? SOUL_CLOSER.hi}`
+    : (SOUL_FALLBACK[lang] ?? SOUL_FALLBACK.hi);
 
   // ── Step 4: Generate Sarvam Bulbul TTS audio ───────────────
   // Pace 0.85 = "urgent" path (Aanya §13 — slow for elderly listeners +

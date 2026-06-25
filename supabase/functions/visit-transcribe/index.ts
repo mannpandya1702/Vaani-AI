@@ -223,8 +223,9 @@ Deno.serve(async (req) => {
   }
 
   // ── Step 2: PII-redact + Claude tool-forced EMR JSON ─────
-  const sessionId = callId ?? `inviz_${crypto.randomUUID()}`;
-  const { redactedText, sessionToken } = await redactPII(transcript, sessionId, {});
+  // No call row yet (raw-audio in) — pass null so pii_token_map.call_id
+  // stays null (nullable FK); session token still uniquely anchors the audit.
+  const { redactedText, sessionToken } = await redactPII(transcript, callId ?? null, {});
 
   const claudeResp = await claudeCall({
     system: SYSTEM_PROMPT,
