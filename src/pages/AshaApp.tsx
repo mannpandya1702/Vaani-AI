@@ -125,10 +125,12 @@ export default function AshaApp() {
           <section className="flex-1 flex flex-col items-center justify-center p-6">
             <LangToggle value={lang} onChange={setLang} disabled={inCall} />
 
+            <MicCheck />
+
             <button
               type="button"
               onClick={start}
-              className="mt-10 w-44 h-44 rounded-full bg-vaani-saffron text-vaani-navy shadow-xl flex items-center justify-center hover:scale-105 transition-transform active:scale-95"
+              className="mt-6 w-44 h-44 rounded-full bg-vaani-saffron text-vaani-navy shadow-xl flex items-center justify-center hover:scale-105 transition-transform active:scale-95"
               aria-label="Start a new call"
             >
               <Mic className="w-16 h-16" />
@@ -205,6 +207,140 @@ export default function AshaApp() {
       <footer className="text-[11px] text-muted-foreground p-3 text-center border-t">
         Vaani-AI · AI-assisted health screening · Decisions reviewed by the named RMP.
       </footer>
+    </div>
+  );
+}
+
+/**
+ * Pre-call mic-level meter. Opens the browser mic with getUserMedia,
+ * pipes it into an AnalyserNode, and shows live RMS level. Lets the
+ * user (and us) confirm that the browser/OS mic is actually working
+ * BEFORE we hand it to the VAPI SDK. If this meter doesn't move when
+ * the user speaks, no amount of fixing on the VAPI side will help.
+ */
+function MicCheck() {
+  const [state, setState] = useState<'idle' | 'running' | 'denied' | 'no-device'>('idle');
+  const [level, setLevel] = useState(0);
+  const [peak, setPeak] = useState(0);
+  const [device, setDevice] = useState<string>('');
+  const streamRef = useRef<MediaStream | null>(null);
+  const acRef = useRef<AudioContext | null>(null);
+  const rafRef = useRef<number | null>(null);
+
+  async function start() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      const track = stream.getAudioTracks()[0];
+      setDevice(track?.label || 'default mic');
+      const AC = window.AudioContext || (window as any).webkitAudioContext;
+      const ac = new AC();
+      acRef.current = ac;
+      const src = ac.createMediaStreamSource(stream);
+      const an = ac.createAnalyser();
+      an.fftSize = 1024;
+      src.connect(an);
+      const buf = new Uint8Array(an.fftSize);
+      setPeak(0);
+      const tick = () => {
+        an.getByteTimeDomainData(buf);
+        let max = 0;
+        for (let i = 0; i < buf.length; i++) {
+          const v = Math.abs(buf[i] - 128);
+          if (v > max) max = v;
+        }
+        const lvl = Math.min(1, max / 64);
+        setLevel(lvl);
+        setPeak((p) => (lvl > p ? lvl : p * 0.99));
+        rafRef.current = requestAnimationFrame(tick);
+      };
+      tick();
+      setState('running');
+    } catch (e: any) {
+      console.error('[mic-check]', e);
+      if (e?.name === 'NotAllowedError') setState('denied');
+      else if (e?.name === 'NotFoundError') setState('no-device');
+      else setState('denied');
+    }
+  }
+
+  function stop() {
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    acRef.current?.close().catch(() => {});
+    streamRef.current = null;
+    acRef.current = null;
+    setLevel(0);
+    setPeak(0);
+    setState('idle');
+  }
+
+  useEffect(() => () => { stop(); }, []);
+
+  const widthPct = Math.round(level * 100);
+  const peakPct = Math.round(peak * 100);
+  const heard = peak > 0.08;
+
+  return (
+    <div className="mt-6 w-full max-w-sm rounded-xl border bg-card p-3 shadow-sm">
+      <div className="flex items-center gap-2 mb-2">
+        <Mic className="w-4 h-4 text-muted-foreground" />
+        <span className="text-xs font-semibold">Mic check</span>
+        {state === 'running' && heard && (
+          <span className="ml-auto text-xs text-emerald-600 dark:text-emerald-400">✓ heard</span>
+        )}
+        {state === 'denied' && (
+          <span className="ml-auto text-xs text-red-600 dark:text-red-400">permission denied</span>
+        )}
+        {state === 'no-device' && (
+          <span className="ml-auto text-xs text-red-600 dark:text-red-400">no mic found</span>
+        )}
+      </div>
+
+      {state === 'idle' && (
+        <button
+          onClick={start}
+          className="w-full text-sm rounded-md border bg-secondary/60 hover:bg-secondary px-3 py-2"
+        >
+          Test your microphone
+        </button>
+      )}
+
+      {state === 'running' && (
+        <>
+          <div className="relative h-4 rounded-full bg-muted overflow-hidden">
+            <div
+              className="absolute inset-y-0 left-0 bg-emerald-500 transition-[width] duration-75"
+              style={{ width: `${widthPct}%` }}
+            />
+            <div
+              className="absolute inset-y-0 w-0.5 bg-emerald-700/70"
+              style={{ left: `${peakPct}%` }}
+            />
+          </div>
+          <div className="mt-2 flex items-center justify-between text-[11px] text-muted-foreground">
+            <span className="truncate max-w-[60%]" title={device}>{device}</span>
+            <button onClick={stop} className="underline">stop</button>
+          </div>
+          {!heard && (
+            <div className="mt-2 text-[11px] text-amber-700 dark:text-amber-300">
+              Speak normally — the bar should jump. If it doesn't, check Windows Sound → Input.
+            </div>
+          )}
+        </>
+      )}
+
+      {state === 'denied' && (
+        <div className="text-xs text-muted-foreground">
+          Click the mic icon in your browser's URL bar and choose <b>Allow</b>, then reload.
+        </div>
+      )}
+
+      {state === 'no-device' && (
+        <div className="text-xs text-muted-foreground">
+          No microphone is connected. Plug one in and reload.
+        </div>
+      )}
     </div>
   );
 }
