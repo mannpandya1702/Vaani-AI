@@ -124,3 +124,6 @@ verify_jwt = false
 
 [functions.audit-compliance-coverage]
 verify_jwt = false
+
+[functions.vapi-custom-llm]
+verify_jwt = false
