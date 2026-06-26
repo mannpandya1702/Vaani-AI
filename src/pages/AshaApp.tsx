@@ -9,6 +9,12 @@ type Lang = 'hi' | 'ta';
 type CallState = 'idle' | 'connecting' | 'in-call' | 'ending' | 'ended';
 type TranscriptTurn = { idx: number; role: 'user' | 'assistant'; text: string; final: boolean };
 
+// Shared ref so MicCheck can be force-released from outside (right before
+// vapi.start). Two concurrent getUserMedia consumers on the same default
+// device — MicCheck + Daily.co — yields a silent track to the second
+// caller on Chrome/Windows + USB headsets. Found in the 9-dim board audit.
+const micCheckStopRef: { current: null | (() => void) } = { current: null };
+
 const PUBLIC_KEY = import.meta.env.VITE_VAPI_PUBLIC_KEY as string;
 const ASSISTANT_BY_LANG: Record<Lang, string> = {
   hi: import.meta.env.VITE_VAPI_ASSISTANT_ID_HI as string,
@@ -27,12 +33,12 @@ export default function AshaApp() {
     if (!PUBLIC_KEY) return;
     // alwaysIncludeMicInPermissionPrompt: forces VAPI to always re-request mic
     //   permission (helps if Daily.co cached a denied state silently).
-    // startAudioOff: false: ensure the local mic track is published from t=0.
+    // Removed { startAudioOff: false } as 4th arg — board audit found SDK only
+    // reads `audioSource` from that position; the flag was dead code.
     const vapi = new Vapi(
       PUBLIC_KEY,
       undefined,
       { alwaysIncludeMicInPermissionPrompt: true } as any,
-      { startAudioOff: false } as any,
     );
     vapiRef.current = vapi;
 
@@ -112,6 +118,17 @@ export default function AshaApp() {
     if (!ASSISTANT_BY_LANG[lang]) {
       toast.error('No assistant configured for ' + lang);
       return;
+    }
+    // Release MicCheck's getUserMedia BEFORE Daily.co grabs the mic. Two
+    // concurrent consumers on the same default device silently yields an
+    // empty track to the second caller on Chrome/Windows + USB headsets.
+    // Found in the 9-dim board audit (1.C).
+    if (micCheckStopRef.current) {
+      try { micCheckStopRef.current(); } catch (e) { console.warn('[mic-check] stop failed', e); }
+      micCheckStopRef.current = null;
+      // Tiny delay to let the OS-level handle actually close before Daily
+      // requests a fresh getUserMedia. 200ms is empirically the safe floor.
+      await new Promise((r) => setTimeout(r, 200));
     }
     setTurns([]);
     setCallId(null);
@@ -320,6 +337,17 @@ function MicCheck() {
     setPeak(0);
     setState('idle');
   }
+
+  // Expose stop() to AshaApp.start() so it can release the mic BEFORE
+  // Daily.co tries to grab it. Without this, two concurrent getUserMedia
+  // consumers on the default device produces a silent track to the
+  // second caller. Board-audit finding 1.C.
+  useEffect(() => {
+    micCheckStopRef.current = stop;
+    return () => {
+      if (micCheckStopRef.current === stop) micCheckStopRef.current = null;
+    };
+  });
 
   useEffect(() => () => { stop(); }, []);
 
