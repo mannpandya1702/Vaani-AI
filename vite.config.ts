@@ -10,7 +10,7 @@ import path from 'node:path';
 // On first load the browser will show a self-signed-cert warning —
 // click "Advanced → Proceed". The cert is regenerated each cold start.
 export default defineConfig({
-  server: { host: '::', port: 8080, https: true },
+  server: { host: true, port: 8080, https: true, strictPort: false },
   plugins: [react(), basicSsl()],
   resolve: {
     alias: { '@': path.resolve(__dirname, './src') },
