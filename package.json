@@ -11,12 +11,14 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc -b",
     "db:diff": "supabase db diff --schema public",
     "db:push": "supabase db push",
     "db:reset": "supabase db reset",
     "fn:deploy": "supabase functions deploy",
-    "fn:serve": "supabase functions serve"
+    "fn:serve": "supabase functions serve",
+    "preflight": "deno run --allow-env --allow-net eval/pstn-ready.ts",
+    "preflight:keys": "deno run --allow-env --allow-net eval/vapi-key-check.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
@@ -37,6 +39,7 @@
     "@radix-ui/react-tabs": "^1.1.12",
     "@radix-ui/react-toast": "^1.2.14",
     "@radix-ui/react-tooltip": "^1.2.7",
+    "@sentry/react": "^9.47.1",
     "@supabase/supabase-js": "^2.81.1",
     "@tanstack/react-query": "^5.83.0",
     "@vapi-ai/web": "^2.5.2",
@@ -63,6 +66,7 @@
     "@types/node": "^22.16.5",
     "@types/react": "^18.3.23",
     "@types/react-dom": "^18.3.7",
+    "@vitejs/plugin-basic-ssl": "^1.2.0",
     "@vitejs/plugin-react-swc": "^3.11.0",
     "autoprefixer": "^10.4.21",
     "eslint": "^9.32.0",

@@ -1,4 +1,6 @@
-# Methodology — AI Shadow Diagnosis Benchmark
+# Methodology — AI-assisted Presumptive Screening Benchmark
+
+> The hackathon brief calls this Stage 3 "AI Shadow Diagnosis." In our own public artefacts we use "AI-assisted presumptive screening" per NMC Act 2019 / IMC Reg 6.1.1. Methodology is identical; only the label.
 
 ## Inclusion criteria for the case set
 

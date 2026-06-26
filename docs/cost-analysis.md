@@ -24,7 +24,7 @@ A typical Vaani consult is **3 minutes of patient voice + 1 LLM triage call + 1 
 | Component | Provider | Quantity | Rate (₹) | Cost (₹) |
 |---|---|---|---|---|
 | STT (3 min) | Sarvam Saarika | 3 min | 0.83 / min | 2.49 |
-| LLM triage | Claude Sonnet 4.6 (via Bedrock ap-south-1) — *with prompt-cache hit (≥85% inputs cached)* | ~1,800 in / 300 out tokens | input $0.30/M, output $15/M (cached), output non-cached $15/M | 0.84 |
+| LLM triage | Claude Sonnet 4.6 (via VAPI managed Anthropic provider — no live-path cache) | ~1,800 in / 300 out tokens | input $3/M, output $15/M | 2.05 |
 | LLM SOAP | Claude Sonnet 4.6 (same) | ~2,200 in / 800 out tokens | same | 1.21 |
 | TTS callback (8s, Bulbul v3) | Sarvam | 8 sec = 0.13 min | ₹1.50 / min | 0.20 |
 | Telephony (Exotel inbound + outbound) | Exotel toll-free | 3 + 0.13 min | ₹3.0 / min | 9.39 |
@@ -36,13 +36,24 @@ A typical Vaani consult is **3 minutes of patient voice + 1 LLM triage call + 1 
 
 ---
 
-## How the cache lever changes things (Aman §4)
+## How the cache lever changes things (Aman §4) — HONEST RESTATEMENT
 
-With Anthropic prompt-caching enabled:
-- Cold first call: full token cost.
-- Subsequent calls within the 1-hour cache window: **input tokens billed at 1/10th** the rate.
+**The ₹6.20/consult number we previously quoted depended on Anthropic prompt-caching being active on the live voice path. After the 9-dim board audit (2026-06-26) we have to walk that claim back for the demo numbers:**
 
-At scale (≥50 calls/hour on a single MO tenant), Vaani's LLM cost-per-consult drops from ₹2.05 → **₹0.40** — the missed-call total then drops to **~₹6.20/consult**. We're working on documenting cache hit-rate observability so we can publish realised numbers post-pilot.
+- The live voice path uses **VAPI's managed Anthropic provider** (`model.provider: anthropic` on the VAPI assistant). VAPI does not currently pass an `anthropic-beta: prompt-caching-2024-07-31` header or `cache_control` markers on our behalf. So our 6,000-char Hindi system prompt is billed at full input price on **every** turn.
+- The post-call paths (`triage-score`, `soap-generate`, `visit-transcribe`) **do** mark `cache_control: { type: 'ephemeral' }` on the system block and DO benefit from caching at the official tier. Those still hit the ₹1.55/per-in-visit and ₹0.40/per-call numbers below.
+
+**Honest numbers** (no cache assumption on the live voice path):
+
+| Path | Cold | With cache (post-call paths only) |
+|------|------|-----------------------------------|
+| Live voice (per 3-min consult) | ~₹2.05 LLM cost (full input every turn) | unchanged — cache not active |
+| Post-call triage-score | ~₹0.40/call | ~₹0.05/call with cache |
+| Post-call soap-generate / visit-transcribe | ₹1.55 in-visit | ~₹0.30 in-visit with cache |
+
+**Net effect on per-consult marginal:** the missed-call path lands at **~₹8.50/consult** (not ₹6.20), and the toll-free path at **~₹10.50/consult**. Both still beat the ₹150-₹400 offline / ₹400-₹1,500 video baseline.
+
+**Path to the ₹6.20 number we want**: route the live voice path through a custom-LLM Supabase edge function (`vapi-custom-llm`, tracked as audit D1) that emits proper `cache_control` markers and calls Bedrock ap-south-1 directly. Same architecture also delivers DPDP §16 / Anand §3.9 compliance (no raw caller speech to Anthropic US). Estimated implementation effort: 4-6 hours.
 
 ---
 

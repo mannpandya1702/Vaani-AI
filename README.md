@@ -67,33 +67,68 @@ ABDM ──────── Sandbox; M2/M3 production roadmap
 ## Getting Started
 
 ### Prerequisites
-- Node.js 18+ and npm
+- Node.js 20+ and npm
+- Deno 2.x (for edge functions + eval harness)
 - Supabase CLI: `npm install -g supabase`
-- A Supabase project (already provisioned: `kjhpmoqybqnjpqfqitqr` · ap-south-1 Mumbai)
 
 ### Setup
 
 ```bash
-# 1. Install dependencies
-npm install
+# 1. Install dependencies (project pins vite ^5 which conflicts with
+#    plugin-basic-ssl ^2 peer; legacy-peer-deps resolves cleanly)
+npm install --legacy-peer-deps
 
-# 2. Copy environment template
+# 2. Copy environment template + fill in values
 cp .env.example .env.local
-# Fill in actual values in .env.local — NEVER commit this file.
+# See `.env.example` for every variable, what it's for, and which prefix
+# the frontend reads. NEVER commit .env.local.
 
-# 3. Link to Supabase project
-supabase link --project-ref kjhpmoqybqnjpqfqitqr
+# 3. Verify the VAPI keys are correct (the public key is browser-side;
+#    the private key is server-side; they're DIFFERENT)
+set -a && . ./.env.local && set +a
+deno run --allow-env --allow-net eval/vapi-key-check.ts
 
-# 4. Push migrations to live Supabase
-supabase db push
-
-# 5. Generate TypeScript types from live schema
-supabase gen types typescript --project-id kjhpmoqybqnjpqfqitqr \
-  > src/integrations/supabase/types.ts
-
-# 6. Start dev server
-npm run dev          # → http://localhost:8080
+# 4. Start dev server (HTTPS — needed for browser mic access on LAN)
+npm run dev
+# → https://localhost:8080 (accept the self-signed cert once)
 ```
+
+### Verify the full pipeline locally
+
+```bash
+# 1. Run the eval harness against the deployed edge functions
+deno run --allow-env --allow-net --allow-read --allow-write eval/run.ts
+# Expected: 10/12 passing, recall 100%, band-match 100%
+
+# 2. Smoke-test the custom-LLM proxy
+curl -X POST "$SUPABASE_URL/functions/v1/vapi-custom-llm" \
+  -H "Authorization: Bearer $WEBHOOK_MASTER_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"messages":[{"role":"system","content":"You are Vaani in Hindi."},{"role":"user","content":"बुख़ार है"}]}'
+
+# 3. Check edge-function health
+for fn in vapi-webhook process-call-records triage-score soap-generate \
+          vaani-signoff cockpit-feed soap-sign visit-transcribe \
+          vapi-custom-llm; do
+  echo "── $fn ──"
+  curl -s "$SUPABASE_URL/functions/v1/$fn/health" \
+    -H "Authorization: Bearer $SUPABASE_ANON_KEY"
+done
+```
+
+### Flip from VAPI's managed Anthropic to our PII-compliant proxy
+
+By default the assistants point at our `vapi-custom-llm` proxy + Sarvam
+STT + Sarvam Bulbul TTS — all India-resident, PII-redacted per turn,
+with live PCPNDT / MHCA / POCSO refusal interception. To verify on a
+fresh environment:
+
+```bash
+deno run --allow-env --allow-net eval/enable-custom-llm.ts hi
+```
+
+`--revert` rolls back to VAPI's managed Anthropic provider in one
+command if you need to triage.
 
 ### Edge Functions
 

@@ -77,13 +77,21 @@ const SCRIPTS: Record<RefusalCategory, Omit<RefusalMatch, 'category' | 'matched_
     required_followup: 'pcpndt_compliance_log',
   },
   mhca_suicidal_ideation: {
-    script_id: 'refusal_mhca_v1',
+    // v2 (2026-06-26): per 9-dim board audit §3:
+    //  - removed feminine "जोड़ रही हूँ" / "இணைக்கிறேன்" (Vaani is gender-neutral)
+    //  - 14416 now leads the script and is UNCONDITIONAL ("अभी डायल कीजिए"),
+    //    not "ज़रूरत हो तो" — MHCA s.18 mandates immediate referral
+    //  - call number spoken in words too ("चौदह चार सौ सोलह") so Sarvam/
+    //    ElevenLabs TTS reads it as a phone number, not digits
+    //  - removed "जोड़ रहे हैं" promise of mid-call transfer (architecture
+    //    moved to cockpit handoff)
+    script_id: 'refusal_mhca_v2',
     script_hi:
-      'आपकी बात ज़रूरी है। मैं आपके साथ हूँ। एक मिनट रुकिए, मैं अभी डॉक्टर साहब को जोड़ रही हूँ। ज़रूरत हो तो टेली-मानस 14416 भी आपके लिए है।',
+      'यह बात बहुत ज़रूरी है जी। Tele-MANAS पर मदद मिलेगी — चौदह चार सौ सोलह — 14416 — अभी फ़ोन कीजिए। डॉक्टर साहब आपकी रिपोर्ट तुरंत देख रहे हैं।',
     script_ta:
-      'உங்கள் வார்த்தைகள் முக்கியம். நான் உங்களுடன் இருக்கிறேன். ஒரு நிமிடம் காத்திருங்கள், நான் இப்போது டாக்டரை இணைக்கிறேன். தேவைப்பட்டால் டெலி-மானஸ் 14416 உங்களுக்கான உதவி.',
+      'இது மிக முக்கியம். டெலி-மானஸ் 14416-க்கு உடனே அழைக்கவும். டாக்டர் உங்கள் அறிக்கையை இப்போதே பார்க்கிறார்.',
     script_en:
-      'Your words matter. I am with you. Please hold while I connect a doctor. Tele-MANAS 14416 is also there for you if needed.',
+      'This matters a lot. Call Tele-MANAS 14416 now — that is one-four-four-one-six. The doctor is reviewing your report right now.',
     helplines: ['Tele-MANAS 14416', 'iCall 9152987821', 'Vandrevala 1860-2662-345', 'NIMHANS 080-46110007'],
     required_followup: 'tele_manas_14416',
   },

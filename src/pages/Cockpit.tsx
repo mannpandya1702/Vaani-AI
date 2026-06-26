@@ -57,6 +57,7 @@ interface CockpitRow {
     differential_list: any[];
     icd10_codes: string[];
     icd11_codes: string[];
+    mo_only_drug_hints: string[] | null;
     lang: string;
     mo_signed_at: string | null;
     mo_user_id: string | null;
@@ -111,11 +112,11 @@ export default function Cockpit() {
 function DemoDisclosureChip() {
   return (
     <span
-      className="ml-auto inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider rounded-md border border-amber-500/70 bg-amber-500/10 text-amber-700 dark:text-amber-300 px-2 py-1"
-      title="AI Clinical Decision-Support Agent · Demonstration only · Not a Registered Medical Practitioner under NMC Act 2019 · Output is not a substitute for licensed clinical review."
+      className="ml-auto inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider rounded-md border bg-foreground/5 text-foreground/80 px-2 py-1"
+      title="AI-Assisted Screening · Pilot — Vaani is an AI screener; every SOAP note is reviewed and signed by a Registered Medical Practitioner under NMC Act 2019 before any patient-facing action."
     >
       <Shield className="w-3 h-3" />
-      AI · DEMO MODE
+      AI-Assisted · Pilot
     </span>
   );
 }
@@ -162,14 +163,24 @@ function useCockpitFeed() {
   return useQuery<{ rows: CockpitRow[]; fetched_at: string }>({
     queryKey: ['cockpit-feed'],
     queryFn: async () => {
-      const r = await fetch(`${FN_BASE}/cockpit-feed?limit=30`, {
-        headers: { Authorization: FN_AUTH },
-      });
-      if (!r.ok) throw new Error(`cockpit-feed ${r.status}`);
-      return r.json();
+      // Audit §4: 8s client-side timeout so a stuck edge function
+      // doesn't strand the UI in a loading state forever.
+      const ctl = new AbortController();
+      const tid = window.setTimeout(() => ctl.abort(), 8000);
+      try {
+        const r = await fetch(`${FN_BASE}/cockpit-feed?limit=30`, {
+          headers: { Authorization: FN_AUTH },
+          signal: ctl.signal,
+        });
+        if (!r.ok) throw new Error(`cockpit-feed ${r.status}`);
+        return await r.json();
+      } finally {
+        window.clearTimeout(tid);
+      }
     },
     refetchInterval: 3000,
     refetchOnWindowFocus: true,
+    retry: 1,
   });
 }
 
@@ -267,10 +278,14 @@ function TriageCard({ row, onClick }: { row: CockpitRow; onClick: () => void }) 
   return (
     <button
       onClick={onClick}
+      aria-label={`${row.triage.band} ${row.triage.presumptive_label.replace(/_/g, ' ')}${isSigned ? ', signed' : ', awaiting sign-off'}`}
       className={cn(
         'w-full text-left rounded-xl border bg-card p-4 transition shadow-sm hover:shadow-md hover:scale-[1.005]',
         cls.cardBorder,
-        isRed && !isSigned && 'ring-2 ring-red-500/40 animate-pulse',
+        // Audit §4: pulse only RED + unsigned. Honor prefers-reduced-motion.
+        isRed && !isSigned && 'ring-2 ring-red-500/40 motion-safe:animate-pulse',
+        // Signed RED rows get an emerald glow instead of a continuing pulse.
+        isSigned && isRed && 'ring-1 ring-emerald-500/40',
         isSigned && 'opacity-70',
       )}
     >
@@ -332,6 +347,18 @@ function SoapReviewDialog({
   const [soulMessage, setSoulMessage] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
+  // Audit §4: reset soulMessage when the dialog closes so the next row's
+  // "Sent: …" banner doesn't leak across cards. Also revoke any pending
+  // blob URL on the <audio>.
+  useEffect(() => {
+    if (open) return;
+    setSoulMessage(null);
+    if (audioRef.current?.dataset.blobUrl) {
+      try { URL.revokeObjectURL(audioRef.current.dataset.blobUrl); } catch {/* noop */}
+      audioRef.current.dataset.blobUrl = '';
+    }
+  }, [open]);
+
   if (!row) return null;
   const isSigned = !!row.soap?.mo_signed_at;
   const lang = row.patient?.preferred_language ?? 'hi';
@@ -362,11 +389,22 @@ function SoapReviewDialog({
         const blob = new Blob([buf], { type: 'audio/wav' });
         const url = URL.createObjectURL(blob);
         if (audioRef.current) {
+          // Revoke previous blob URL to avoid the leak the audit flagged.
+          const prev = audioRef.current.dataset.blobUrl;
+          if (prev) try { URL.revokeObjectURL(prev); } catch {/* noop */}
           audioRef.current.src = url;
+          audioRef.current.dataset.blobUrl = url;
           await audioRef.current.play().catch(() => {/* autoplay blocked */});
         }
       }
-      toast.success('Patient called back: डॉक्टर साहब ने देख लिया है');
+      // Language-aware toast — audit flagged Tamil-patient calls
+      // showing a Hindi confirmation string.
+      const TOAST_BY_LANG: Record<string, string> = {
+        hi: 'मरीज़ को कॉल हो गई — डॉक्टर साहब ने देख लिया है',
+        ta: 'நோயாளியை அழைத்தது — டாக்டர் பார்த்துவிட்டார்',
+        en: 'Patient called back — the doctor has reviewed your report',
+      };
+      toast.success(TOAST_BY_LANG[lang] ?? TOAST_BY_LANG.hi);
     } catch (e: any) {
       toast.error(`Sign failed: ${e?.message ?? e}`);
     } finally {
@@ -407,6 +445,20 @@ function SoapReviewDialog({
                 <SoapSection label="A — Assessment" body={row.soap.assessment} />
                 <SoapSection label="P — Plan (patient-facing)" body={row.soap.plan} />
 
+                {row.soap.mo_only_drug_hints && row.soap.mo_only_drug_hints.length > 0 && (
+                  <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3">
+                    <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-300 mb-1">
+                      <Shield className="w-3.5 h-3.5" />
+                      AI drug suggestions · MO-only · NOT shared with patient
+                    </div>
+                    <ul className="text-sm space-y-1">
+                      {row.soap.mo_only_drug_hints.map((d, i) => (
+                        <li key={i} className="font-mono text-xs">• {d}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
                 {row.soap.differential_list?.length > 0 && (
                   <div>
                     <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
@@ -438,9 +490,9 @@ function SoapReviewDialog({
                 <div className="rounded-lg border bg-amber-500/5 p-3 text-xs">
                   <div className="font-semibold mb-1 text-amber-700 dark:text-amber-300">AI Draft Timestamp</div>
                   <div className="text-muted-foreground">
-                    Drafted by Manorama (AI Decision-Support Agent) · Demo mode · Not a Registered Medical Practitioner.
+                    AI-pre-drafted from Vaani's screening transcript. The named RMP (HPR-linked under ABDM) independently reviews and signs before any patient-facing action.
                     {isSigned && (
-                      <> Approved at {new Date(row.soap.mo_signed_at!).toLocaleString()}.</>
+                      <> Signed at {new Date(row.soap.mo_signed_at!).toLocaleString()}.</>
                     )}
                   </div>
                 </div>
@@ -497,31 +549,110 @@ function SoapSection({ label, body }: { label: string; body: string }) {
 }
 
 /* ─────────────────────────────────────────────────────────── */
-/* Other tabs (placeholders for demo)                          */
+/* Patients · Notes · Me — render real data from cockpit-feed */
 
 function Patients() {
+  const { data } = useCockpitFeed();
+  const rows = data?.rows ?? [];
+  // Group by patient id (callers we've seen).
+  const byPatient = new Map<string, { id: string; ageSex: string; lang: string; calls: number; latestBand: TriageBand; latestAt: string }>();
+  for (const r of rows) {
+    if (!r.patient) continue;
+    const key = r.patient.id;
+    const prev = byPatient.get(key);
+    const ageSex = `${r.patient.sex ?? '?'} · ${r.patient.age_years ?? '?'}y`;
+    const lang = r.patient.preferred_language ?? '?';
+    if (!prev) {
+      byPatient.set(key, { id: key, ageSex, lang, calls: 1, latestBand: r.triage.band, latestAt: r.triage.created_at });
+    } else {
+      prev.calls += 1;
+      if (r.triage.created_at > prev.latestAt) { prev.latestAt = r.triage.created_at; prev.latestBand = r.triage.band; }
+    }
+  }
+  const list = Array.from(byPatient.values()).sort((a, b) => b.latestAt.localeCompare(a.latestAt));
+
   return (
     <div className="container max-w-screen-md p-4">
       <h2 className="text-2xl font-semibold tracking-tight mb-4">Patients</h2>
-      <p className="text-muted-foreground">Patient timeline — coming post-demo.</p>
+      {list.length === 0 && <p className="text-sm text-muted-foreground">No patients yet — they'll appear after their first call.</p>}
+      <ul className="space-y-2">
+        {list.map((p) => (
+          <li key={p.id} className="rounded-lg border bg-card p-3 flex items-center gap-3">
+            <div className="w-1.5 self-stretch rounded-full" style={{ background: bandClasses(p.latestBand).dot.replace('bg-', '') }} />
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium">{p.ageSex} · {p.lang.toUpperCase()}</div>
+              <div className="text-xs text-muted-foreground">{p.calls} call{p.calls === 1 ? '' : 's'} · last {timeAgo(p.latestAt)}</div>
+            </div>
+            <BandPill band={p.latestBand} count={1} />
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
 
 function NotesIndex() {
+  const { data } = useCockpitFeed();
+  const rows = (data?.rows ?? []).filter((r) => r.soap?.mo_signed_at);
   return (
     <div className="container max-w-screen-md p-4">
-      <h2 className="text-2xl font-semibold tracking-tight mb-4">SOAP Notes</h2>
-      <p className="text-muted-foreground">All signed SOAPs — view via Queue cards for now.</p>
+      <h2 className="text-2xl font-semibold tracking-tight mb-4">Signed SOAP notes</h2>
+      {rows.length === 0 && <p className="text-sm text-muted-foreground">No signed notes yet.</p>}
+      <ul className="space-y-2">
+        {rows.map((r) => (
+          <li key={r.triage.id} className="rounded-lg border bg-card p-3">
+            <div className="flex items-center gap-2">
+              <BandPill band={r.triage.band} count={1} />
+              <span className="text-sm font-medium truncate">{r.triage.presumptive_label.replace(/_/g, ' ')}</span>
+              <span className="ml-auto text-xs text-muted-foreground">{timeAgo(r.soap!.mo_signed_at!)}</span>
+            </div>
+            <div className="text-xs text-muted-foreground mt-1 line-clamp-2">{r.soap?.assessment}</div>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
 
 function Me() {
+  const { data } = useCockpitFeed();
+  const rows = data?.rows ?? [];
+  const signedToday = rows.filter((r) => {
+    const ts = r.soap?.mo_signed_at;
+    if (!ts) return false;
+    return new Date(ts).toDateString() === new Date().toDateString();
+  }).length;
+  const pending = rows.filter((r) => !r.soap?.mo_signed_at).length;
+  const rmpName = (import.meta as any).env?.VITE_RMP_NAME ?? 'डॉक्टर साहब';
+  const rmpReg = (import.meta as any).env?.VITE_RMP_MCI_REG ?? '—';
+  const agentPhone = (import.meta as any).env?.VITE_AGENT_PHONE_DISPLAY ?? null;
   return (
     <div className="container max-w-screen-md p-4">
       <h2 className="text-2xl font-semibold tracking-tight mb-4">You</h2>
-      <p className="text-muted-foreground">Profile + on-call toggle — post-demo.</p>
+      <div className="rounded-lg border bg-card p-4 mb-4">
+        <div className="text-sm font-semibold">{rmpName}</div>
+        <div className="text-xs text-muted-foreground">MCI / HPR Reg # {rmpReg}</div>
+      </div>
+      {agentPhone && (
+        <div className="rounded-lg border bg-card p-4 mb-4">
+          <div className="text-xs uppercase tracking-wider text-muted-foreground mb-1">Vaani agent number</div>
+          <div className="text-lg font-mono font-semibold">{agentPhone}</div>
+          <div className="text-[11px] text-muted-foreground mt-1">Callbacks + reminders go out from this number.</div>
+        </div>
+      )}
+      <div className="grid grid-cols-2 gap-3">
+        <Stat label="Signed today" value={signedToday} />
+        <Stat label="Pending" value={pending} />
+      </div>
+    </div>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-lg border bg-card p-3">
+      <div className="text-2xl font-bold">{value}</div>
+      <div className="text-xs text-muted-foreground">{label}</div>
     </div>
   );
 }

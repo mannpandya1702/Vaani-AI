@@ -173,7 +173,7 @@ Deno.serve(async (req) => {
   const rf = await callRedFlagCheck(callId, fullTranscript, lang, call.patient_id, call.tenant_id);
   if (rf?.should_halt && rf.red_flags?.length > 0) {
     // Force RED, skip Claude — save cost + latency
-    return await forceRedBand(sb, callId, call, rf.red_flags);
+    return await forceRedBand(sb, callId, call, rf.red_flags, patient ?? undefined, fullTranscript);
   }
 
   // 4. Pull clinical context with age/pregnancy gating
@@ -292,6 +292,33 @@ Deno.serve(async (req) => {
     band === 'RED' ||
     redFlagCategories.length > 0;
 
+  // Per 9-dim audit §3 — even when the LLM emits RED, it can:
+  //   omit Tele-MANAS 14416 (case_004), use English on a Hindi call,
+  //   leave a raw category in presumptive_label, or miss respiratory
+  //   co-flag on peds fast-breathing (case_006).
+  // The post-processor enforces those invariants deterministically.
+  // For AMBER/GREEN we leave the LLM output alone except for one guard:
+  // strip "108" from AMBER/GREEN actions (case_009 false positive).
+  let finalLabel = decision.presumptive_label ?? 'unspecified';
+  let finalCategories = redFlagCategories;
+  let finalAction = decision.recommended_action ?? null;
+  if (band === 'RED') {
+    const refined = applyRedBandPostProcessor(
+      {
+        presumptive_label: finalLabel,
+        red_flag_categories: finalCategories,
+        recommended_action: finalAction,
+      },
+      { lang, age: patient?.age_years ?? null, transcript: fullTranscript },
+    );
+    finalLabel = refined.presumptive_label;
+    finalCategories = refined.red_flag_categories;
+    finalAction = refined.recommended_action;
+  } else if (finalAction && /\b108\b/.test(finalAction)) {
+    // Strip stray 108 ambulance mention from non-RED — audit case_009
+    finalAction = finalAction.replace(/(?:[^.!?]*\b108\b[^.!?]*[.!?])\s*/g, '').trim();
+  }
+
   // 8. Insert triage_decisions
   const { data: inserted, error: insertErr } = await sb
     .from('triage_decisions')
@@ -300,15 +327,15 @@ Deno.serve(async (req) => {
       patient_id: call.patient_id,
       tenant_id: call.tenant_id,
       band,
-      presumptive_label: decision.presumptive_label ?? 'unspecified',
-      red_flag_categories: redFlagCategories,
+      presumptive_label: finalLabel,
+      red_flag_categories: finalCategories,
       confidence,
       reasoning: decision.reasoning ?? null,
       needs_mo_review: needsMoReview,
       citations: decision.citations ?? [],
       summary_en: decision.summary_en ?? null,
       summary_native: decision.summary_native ?? null,
-      recommended_action: decision.recommended_action ?? null,
+      recommended_action: finalAction,
       callback_time_iso: decision.callback_time_iso ?? null,
       classifier_model: 'claude-sonnet-4-6',
       classifier_prompt_version: 'triage-v2',
@@ -418,10 +445,139 @@ async function callRedFlagCheck(
   }
 }
 
+// ─────────────────────────────────────────────────────────────
+// RED-band post-processor — used by BOTH forceRedBand (rules-only)
+// and the LLM happy path. Per 9-dim audit §3 (Aanya):
+//   - case_004 (active SI) emitted no Tele-MANAS 14416
+//   - case_009 emitted forbidden 108 on AMBER fever
+//   - case_006 missed respiratory co-flag on peds fast-breathing
+//   - forceRedBand wrote English action in every language
+//   - presumptive_label was raw category (breaks the enum)
+// This helper enforces all five fixes deterministically.
+
+const CATEGORY_TO_LABEL: Record<string, string> = {
+  cardiac: 'acs_suspect',
+  stroke_befast: 'stroke_suspect',
+  neuro: 'seizure_workup',
+  respiratory: 'asthma_exacerbation',
+  hemoptysis: 'hemoptysis_workup',
+  obstetric: 'preeclampsia_suspect',
+  preeclampsia_eclampsia: 'preeclampsia_suspect',
+  peds_danger: 'imci_pneumonia',
+  dehydration_severe: 'imci_diarrhea_severe',
+  envenomation: 'snake_envenomation',
+  rabies_exposure: 'rabies_pep_required',
+  mental_health: 'suicidal_ideation_active',
+  fever_high_risk: 'dengue_suspect',
+  sepsis: 'pneumonia_suspect',
+  gi_acute: 'peritonitis_suspect',
+  metabolic_acute: 'dka_suspect',
+  burns: 'unspecified',
+  trauma: 'unspecified',
+};
+
+// Per-language opener for RED band (Aanya §3 — never English on Hindi/Tamil call).
+const RED_OPENER: Record<string, string> = {
+  hi: 'तुरंत 108 पर एम्बुलेंस बुलाइए। डॉक्टर साहब कुछ ही मिनट में कॉल करेंगे।',
+  ta: 'உடனே 108-க்கு ஆம்புலன்ஸ் அழைக்கவும். டாக்டர் சில நிமிடங்களில் அழைப்பார்.',
+  en: 'Call 108 ambulance immediately. Doctor will call you back.',
+};
+
+const MHCA_LINE: Record<string, string> = {
+  hi: 'Tele-MANAS 14416 पर अभी फ़ोन कीजिए — चौदह चार सौ सोलह।',
+  ta: 'டெலி-மானஸ் 14416-க்கு உடனே அழைக்கவும்.',
+  en: 'Call Tele-MANAS 14416 immediately.',
+};
+
+const CHILDLINE: Record<string, string> = {
+  hi: 'Childline 1098 पर भी बात कीजिए।',
+  ta: 'Childline 1098-ஐயும் தொடர்பு கொள்ளுங்கள்.',
+  en: 'Also reach Childline 1098.',
+};
+
+// Match Hindi peds fast-breathing phrasings — broadened after eval case_006
+// re-run still missed "बहुत तेज़ी से साँस ले रहा है". Matches both तेज़ साँस
+// (adjective+noun) AND तेज़ी से साँस (noun+postposition+verb), plus a handful
+// of common dyspnea idioms. English variants kept for visit-transcribe paths.
+const PEDS_RESPIRATORY_PHRASES = new RegExp(
+  [
+    'fast breathing', 'chest indrawing', 'breath rate', 'breath count',
+    'tej saans', 'tezi se saans',
+    'तेज़ साँस', 'तेज़ी से साँस', 'तेज़\\s*साँस', 'जल्दी[- ]?जल्दी साँस',
+    'साँस तेज़', 'साँस लेने में', 'दम\\s*फूल', 'हाँफ', 'श्वास',
+    'छाती धंस', 'पसली[- ]?चलना',
+  ].join('|'),
+  'i',
+);
+
+/**
+ * Take whatever RED-band decision we have and enforce:
+ *   1. recommended_action in the patient's language
+ *   2. Tele-MANAS 14416 verbatim if mental_health in categories
+ *   3. Childline 1098 if peds + mental_health (child SI)
+ *   4. presumptive_label normalized via CATEGORY_TO_LABEL when raw category leaks
+ *   5. respiratory co-flagged on peds + fast-breathing phrases
+ */
+function applyRedBandPostProcessor(
+  decision: {
+    presumptive_label: string;
+    red_flag_categories: string[];
+    recommended_action: string | null;
+  },
+  opts: { lang: string; age?: number | null; transcript?: string },
+): { presumptive_label: string; red_flag_categories: string[]; recommended_action: string } {
+  const lang = (['hi', 'ta', 'en'].includes(opts.lang) ? opts.lang : 'hi') as 'hi' | 'ta' | 'en';
+  let cats = Array.from(new Set(decision.red_flag_categories ?? []));
+
+  // (5) peds + fast-breathing → ensure respiratory co-flag
+  if (cats.includes('peds_danger') && opts.transcript && PEDS_RESPIRATORY_PHRASES.test(opts.transcript)) {
+    if (!cats.includes('respiratory')) cats = [...cats, 'respiratory'];
+  }
+
+  // (4) Normalize presumptive_label: if it's a raw category, map it
+  let label = decision.presumptive_label;
+  if (label && (label in CATEGORY_TO_LABEL)) label = CATEGORY_TO_LABEL[label];
+  if (!label) label = CATEGORY_TO_LABEL[cats[0] ?? ''] ?? 'unspecified';
+
+  // (1) Build action in patient's language
+  const parts: string[] = [RED_OPENER[lang]];
+
+  // (2) MHCA / Tele-MANAS 14416 — verbatim
+  if (cats.includes('mental_health')) {
+    parts.push(MHCA_LINE[lang]);
+    // (3) Childline 1098 for under-18 SI
+    if (typeof opts.age === 'number' && opts.age > 0 && opts.age < 18) {
+      parts.push(CHILDLINE[lang]);
+    }
+  }
+
+  // If the LLM had a longer action with concrete advice, append it (but keep our opener first)
+  const original = (decision.recommended_action ?? '').trim();
+  if (original && !parts.some((p) => original.includes(p))) {
+    parts.push(original);
+  }
+
+  return {
+    presumptive_label: label,
+    red_flag_categories: cats,
+    recommended_action: parts.join(' '),
+  };
+}
+
 async function forceRedBand(
   sb: any, callId: string, call: any, redFlags: any[],
+  patient?: { age_years?: number | null; preferred_language?: string | null },
+  transcript?: string,
 ): Promise<Response> {
-  const category = redFlags[0]?.category ?? 'other';
+  const lang = (patient?.preferred_language ?? call.lang_detected ?? call.lang_declared ?? 'hi') as string;
+  const categories = redFlags.map((r) => r.category);
+  const rawLabel = redFlags[0]?.category ?? 'other';
+
+  const refined = applyRedBandPostProcessor(
+    { presumptive_label: rawLabel, red_flag_categories: categories, recommended_action: null },
+    { lang, age: patient?.age_years ?? null, transcript },
+  );
+
   const { data: inserted } = await sb
     .from('triage_decisions')
     .insert({
@@ -429,13 +585,13 @@ async function forceRedBand(
       patient_id: call.patient_id,
       tenant_id: call.tenant_id,
       band: 'RED',
-      presumptive_label: category,
-      red_flag_categories: redFlags.map((r) => r.category),
+      presumptive_label: refined.presumptive_label,
+      red_flag_categories: refined.red_flag_categories,
       confidence: 1.0,
       needs_mo_review: true,
-      reasoning: `Rules-first RED: ${redFlags.map((r) => r.category).join(',')}`,
+      reasoning: `Rules-first RED: ${refined.red_flag_categories.join(',')}`,
       summary_en: `Red flag detected via deterministic rule layer. Skipping LLM.`,
-      recommended_action: 'Call 108 ambulance immediately. Doctor will call back.',
+      recommended_action: refined.recommended_action,
       classifier_model: 'rules-only',
       classifier_prompt_version: 'rules-v1',
     })
@@ -448,6 +604,8 @@ async function forceRedBand(
     needs_mo_review: true,
     rules_first_halt: true,
     red_flags: redFlags,
+    presumptive_label: refined.presumptive_label,
+    recommended_action: refined.recommended_action,
   }), { status: 200, headers: { ...corsHeaders, 'content-type': 'application/json' } });
 }
 

@@ -18,10 +18,14 @@
 import { corsHeaders, handleCorsPreflight } from '../_shared/cors.ts';
 import { verifyVapiWebhook } from '../_shared/vapi-auth.ts';
 import { supabaseAdmin } from '../_shared/supabase-admin.ts';
+import { healthOk, isHealthCheck } from '../_shared/health.ts';
 
 Deno.serve(async (req) => {
   const preflight = handleCorsPreflight(req);
   if (preflight) return preflight;
+  if (isHealthCheck(req)) {
+    return healthOk(req, { name: 'vapi-webhook', deps: ['supabase', 'process-call-records'] });
+  }
 
   const t0 = Date.now();
   let rawBody = '';
@@ -42,11 +46,16 @@ Deno.serve(async (req) => {
   try { parsed = rawBody ? JSON.parse(rawBody) : null; }
   catch (e) { errorMsg = errorMsg ?? `json_parse_failed: ${(e as Error).message}`; }
 
-  // 1. Log raw payload always
+  // 1. Log payload (PII-redacted) always. Audit-§3 fix: previously this
+  //    persisted raw caller transcripts straight into dispatch_webhook_logs
+  //    which violated DPDP s.16 / Anand §3.9 — logs leaked PII to anyone
+  //    with read access on the audit table.
+  const safeBody = redactWebhookBody(rawBody);
+  const safeParsed = parsed ? redactParsedBody(parsed) : null;
   await sb.from('dispatch_webhook_logs').insert({
     source: 'vapi',
-    raw_body: rawBody.slice(0, 64_000),
-    parsed_body: parsed,
+    raw_body: safeBody.slice(0, 64_000),
+    parsed_body: safeParsed,
     headers: Object.fromEntries(req.headers),
     signature_valid: signatureValid,
     http_status: httpStatus,
@@ -74,22 +83,37 @@ Deno.serve(async (req) => {
     status: 200, headers: { ...corsHeaders, 'content-type': 'application/json' },
   });
 
+  // NOTE on awaiting: previously these dispatched via
+  // EdgeRuntime?.waitUntil?.(handler(...)). In practice the Deno worker
+  // sometimes killed the request context before the handler completed —
+  // calls stayed in_progress, no triage_decisions row, empty cockpit.
+  // We now AWAIT inline. The webhook responds a few seconds later but
+  // every event runs to completion. VAPI's server.timeoutSeconds=20s
+  // gives us plenty of headroom. (Audit follow-up — webcall pipeline.)
   switch (eventType) {
-    case 'status-update':
     case 'call.started':
-      // @ts-expect-error edge runtime
-      EdgeRuntime?.waitUntil?.(handleCallStarted(callId, vapiCall, message));
+      await handleCallStarted(callId, vapiCall, message).catch((e) =>
+        console.error('[vapi-webhook] handleCallStarted failed', e));
       return respond();
 
+    case 'status-update': {
+      const status: string | undefined = message?.status;
+      if (status === 'in-progress') {
+        await handleCallStartedIfMissing(callId!, vapiCall).catch((e) =>
+          console.error('[vapi-webhook] handleCallStartedIfMissing failed', e));
+      }
+      return respond();
+    }
+
     case 'end-of-call-report':
-      // @ts-expect-error edge runtime
-      EdgeRuntime?.waitUntil?.(handleEndOfCall(callId, vapiCall, message, rawBody));
+      await handleEndOfCall(callId, vapiCall, message, rawBody).catch((e) =>
+        console.error('[vapi-webhook] handleEndOfCall failed', e));
       return respond();
 
     case 'transcript':
     case 'speech-update':
-      // @ts-expect-error edge runtime
-      EdgeRuntime?.waitUntil?.(handleTranscript(callId, message));
+      await handleTranscript(callId, message).catch((e) =>
+        console.error('[vapi-webhook] handleTranscript failed', e));
       return respond();
 
     case 'tool-calls':
@@ -102,11 +126,38 @@ Deno.serve(async (req) => {
   }
 });
 
+// Idempotent wrapper around handleCallStarted — only runs if the call
+// row doesn't already exist. Audit-§3 fix: prevents status-update events
+// arriving AFTER end-of-call-report from clobbering outcome='completed'
+// back to 'in_progress'.
+async function handleCallStartedIfMissing(callId: string, vapiCall: any) {
+  const sb = supabaseAdmin();
+  const { data: existing } = await sb.from('calls')
+    .select('id, outcome').eq('vapi_call_id', callId).maybeSingle();
+  if (existing) {
+    // Already inserted — never re-upsert from a status-update.
+    return;
+  }
+  return handleCallStarted(callId, vapiCall, {});
+}
+
 async function handleCallStarted(callId: string | undefined, vapiCall: any, _message: any) {
   if (!callId) return;
   const sb = supabaseAdmin();
 
-  const phone = vapiCall.customer?.number ?? vapiCall.phoneNumber?.number;
+  // Phone resolution priority:
+  //  1. PSTN customer number (Exotel) — authoritative for phone-channel callers
+  //  2. Auth-signed-in phone passed from the web client via assistantOverrides
+  //     metadata (added 2026-06-26 — phone-numbers.md §1)
+  //  3. Fall back to anonymous placeholder so triage-score's NOT-NULL
+  //     constraint doesn't trip
+  const metadata = vapiCall.assistantOverrides?.metadata ?? {};
+  const phone =
+    vapiCall.customer?.number
+    ?? vapiCall.phoneNumber?.number
+    ?? (metadata.caller_phone_e164 as string | undefined);
+  const callerEmail = (metadata.caller_email as string | undefined) ?? null;
+  const langDeclared = (metadata.caller_lang as string | undefined) ?? 'hi';
   const assistantId = vapiCall.assistantId;
   const orgId = vapiCall.orgId ?? vapiCall.organization?.id;
 
@@ -126,16 +177,39 @@ async function handleCallStarted(callId: string | undefined, vapiCall: any, _mes
     return;
   }
 
-  // Upsert patient
+  // Upsert patient. Priority chain (see docs/phone-numbers.md §1):
+  //   1. Real phone (PSTN customer.number OR signed-in user.phone metadata)
+  //   2. Email-keyed pseudo-phone for email-magic-link signups:
+  //      "+91-email-<sha8>" (RFC-7807 invalid, harmless, unique per email,
+  //      idempotent across sessions so the same user keeps the same patient).
+  //   3. Random anonymous placeholder for fully anonymous web calls.
+  // Without this, triage-score fails the triage_decisions.patient_id NOT
+  // NULL constraint.
   let patientId: string | null = null;
+  let phoneKey: string;
+  let fullName: string | null = null;
   if (phone) {
+    phoneKey = phone;
+  } else if (callerEmail) {
+    const emailHash = await sha256Hex(callerEmail);
+    phoneKey = `+91-em-${emailHash.slice(0, 10)}`;
+    fullName = `Pilot caller (${callerEmail.split('@')[0]})`;
+  } else {
+    phoneKey = `+91900${randomDigits(8)}`;
+    fullName = `Anonymous web caller · ${callId.slice(0, 8)}`;
+  }
+  {
     const { data: existing } = await sb.from('patients')
-      .select('id').eq('phone_e164', phone).eq('tenant_id', tenant.id).maybeSingle();
+      .select('id').eq('phone_e164', phoneKey).eq('tenant_id', tenant.id).maybeSingle();
     if (existing) {
       patientId = existing.id;
     } else {
       const { data: created } = await sb.from('patients').insert({
-        phone_e164: phone, tenant_id: tenant.id, preferred_language: 'hi',
+        phone_e164: phoneKey,
+        tenant_id: tenant.id,
+        preferred_language: langDeclared as any,
+        pregnancy_status: 'not_pregnant',
+        full_name: fullName,
       }).select('id').single();
       patientId = created?.id ?? null;
     }
@@ -147,11 +221,17 @@ async function handleCallStarted(callId: string | undefined, vapiCall: any, _mes
     tenant_id: tenant.id,
     patient_id: patientId,
     vapi_assistant_id: assistantId,
-    channel: 'voice',
+    channel: phone ? 'voice' : 'web',
     outcome: 'in_progress',
     started_at: vapiCall.startedAt ?? new Date().toISOString(),
-    lang_declared: 'hi',
+    lang_declared: langDeclared,
   }, { onConflict: 'vapi_call_id' });
+}
+
+function randomDigits(n: number): string {
+  let out = '';
+  for (let i = 0; i < n; i++) out += Math.floor(Math.random() * 10).toString();
+  return out;
 }
 
 async function handleEndOfCall(
@@ -163,7 +243,12 @@ async function handleEndOfCall(
   if (!callId) return;
   const sb = supabaseAdmin();
 
-  // ── EOC idempotency claim (Aman §10) ──────────────────────────
+  // ── EOC idempotency CHECK (Aman §10 + audit §3 ordering fix) ──
+  // The previous order wrote the idempotency row BEFORE the conditional
+  // update. Any failure mid-handler permanently poisoned retries — the
+  // next delivery would see the key, return, and the call would stay
+  // in_progress forever. Fixed by deferring the key insert until AFTER
+  // the claim succeeds.
   const idempotencyKey = await sha256Hex(`vapi:eoc:${callId}:${rawBody.length}`);
   const { data: dupCheck } = await sb.from('dispatch_idempotency_keys')
     .select('idempotency_key')
@@ -172,9 +257,6 @@ async function handleEndOfCall(
     console.log('[vapi-webhook] duplicate EOC ignored', callId);
     return;
   }
-  await sb.from('dispatch_idempotency_keys').insert({
-    source: 'vapi', idempotency_key: idempotencyKey, resolution: 'processed',
-  });
 
   // Cost breakdown from VAPI report
   const costs = message.costs ?? [];
@@ -208,11 +290,19 @@ async function handleEndOfCall(
     return;
   }
 
-  // Dispatch to process-call-records (best-effort)
+  // Claim succeeded — NOW persist the idempotency row. Order matters per
+  // audit-§3: writing the key before the claim poisoned retries on any
+  // mid-handler failure.
+  await sb.from('dispatch_idempotency_keys').insert({
+    source: 'vapi', idempotency_key: idempotencyKey, resolution: 'processed',
+  });
+
+  // Dispatch to process-call-records — AWAIT so the worker context isn't
+  // killed mid-flight by Deno before triage-score / soap-generate run.
   const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
   const MASTER = Deno.env.get('WEBHOOK_MASTER_KEY');
   if (SUPABASE_URL && MASTER) {
-    fetch(`${SUPABASE_URL}/functions/v1/process-call-records`, {
+    await fetch(`${SUPABASE_URL}/functions/v1/process-call-records`, {
       method: 'POST',
       headers: { authorization: `Bearer ${MASTER}`, 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -286,4 +376,40 @@ async function sha256Hex(text: string): Promise<string> {
   const data = new TextEncoder().encode(text);
   const hash = await crypto.subtle.digest('SHA-256', data);
   return Array.from(new Uint8Array(hash)).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+// ─────────────────────────────────────────────────────────────
+// PII-stripping helpers for dispatch_webhook_logs persistence.
+// Audit-§3 (devansh): the previous code stored raw caller transcripts
+// in dispatch_webhook_logs — a long-retention audit table — which is
+// a DPDP s.16 / Anand §3.9 violation by itself even before anything
+// gets sent abroad. These keep the structural metadata for ops debug
+// (event type, call id, signature_valid, http_status, timestamps,
+// cost breakdown) but drop the actual conversation text.
+
+function redactWebhookBody(raw: string): string {
+  // Best-effort regex strip — replace any "transcript":"..." / "message":"..."
+  // / "content":"..." / "summary":"..." with a placeholder.
+  // Conservative: catches the long string content fields VAPI emits.
+  return raw.replace(
+    /("(?:transcript|message|content|summary|userMessage|assistantMessage)"\s*:\s*)"([^"]*)"/g,
+    (_m, key) => `${key}"[redacted]"`,
+  );
+}
+
+function redactParsedBody(parsed: any): any {
+  if (parsed === null || parsed === undefined) return parsed;
+  if (Array.isArray(parsed)) return parsed.map(redactParsedBody);
+  if (typeof parsed === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(parsed)) {
+      if (['transcript', 'message', 'content', 'summary', 'userMessage', 'assistantMessage'].includes(k) && typeof v === 'string') {
+        out[k] = '[redacted]';
+      } else {
+        out[k] = redactParsedBody(v);
+      }
+    }
+    return out;
+  }
+  return parsed;
 }

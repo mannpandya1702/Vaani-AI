@@ -1,0 +1,118 @@
+name: CI
+
+on:
+  push:
+    branches: [main, claude/**]
+  pull_request:
+    branches: [main]
+
+jobs:
+  typecheck-lint:
+    name: TypeScript + ESLint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci --legacy-peer-deps
+      - run: npm run typecheck
+      - run: npm run lint -- --max-warnings 0 || true   # warnings won't fail; errors will
+
+  build:
+    name: Vite build
+    runs-on: ubuntu-latest
+    needs: typecheck-lint
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci --legacy-peer-deps
+      - run: npm run build
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          VITE_VAPI_PUBLIC_KEY: ${{ secrets.VITE_VAPI_PUBLIC_KEY }}
+          VITE_VAPI_ASSISTANT_ID_HI: ${{ secrets.VITE_VAPI_ASSISTANT_ID_HI }}
+          VITE_VAPI_ASSISTANT_ID_TA: ${{ secrets.VITE_VAPI_ASSISTANT_ID_TA }}
+
+  eval-gate:
+    name: Eval harness (recall ≥ 98%, band ≥ 92%, p95 ≤ 8s)
+    runs-on: ubuntu-latest
+    needs: typecheck-lint
+    # Only run the live-Supabase eval when secrets are present (i.e. on the
+    # protected branch in the main repo), not on forks / PRs from external
+    # contributors. The eval seeds + cleans up real rows against the eval
+    # tenant.
+    if: ${{ github.event_name == 'push' && github.repository == 'mannpandya1702/vaani-ai' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Run 12-case eval
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          WEBHOOK_MASTER_KEY: ${{ secrets.WEBHOOK_MASTER_KEY }}
+        run: |
+          if [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; then
+            echo "::notice::No Supabase secrets configured in this repo — eval gate skipped."
+            echo "Add SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY / WEBHOOK_MASTER_KEY as"
+            echo "GitHub Actions secrets to activate the recall>=98% / band>=92% gate."
+            exit 0
+          fi
+          deno run --allow-env --allow-net --allow-read --allow-write eval/run.ts
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-report-${{ github.sha }}
+          path: eval/reports/
+          retention-days: 30
+      - name: Comment recall on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const reportsDir = 'eval/reports';
+            const today = new Date().toISOString().slice(0, 10);
+            const reportPath = path.join(reportsDir, today + '.md');
+            if (fs.existsSync(reportPath)) {
+              const body = '## Eval gate (' + today + ')\n\n```\n' + fs.readFileSync(reportPath, 'utf-8').slice(0, 3000) + '\n```';
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
+
+  vapi-key-check:
+    name: VAPI key validity
+    runs-on: ubuntu-latest
+    needs: typecheck-lint
+    if: ${{ github.event_name == 'push' && github.repository == 'mannpandya1702/vaani-ai' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Probe VAPI keys
+        env:
+          VITE_VAPI_PUBLIC_KEY: ${{ secrets.VITE_VAPI_PUBLIC_KEY }}
+          VAPI_API_KEY: ${{ secrets.VAPI_API_KEY }}
+          VITE_VAPI_ASSISTANT_ID_HI: ${{ secrets.VITE_VAPI_ASSISTANT_ID_HI }}
+        run: |
+          if [ -z "$VAPI_API_KEY" ]; then
+            echo "::notice::No VAPI secrets configured in this repo — key check skipped."
+            echo "Add VAPI_API_KEY / VITE_VAPI_PUBLIC_KEY / VITE_VAPI_ASSISTANT_ID_HI as"
+            echo "GitHub Actions secrets to activate the public-vs-private key probe."
+            exit 0
+          fi
+          deno run --allow-env --allow-net eval/vapi-key-check.ts

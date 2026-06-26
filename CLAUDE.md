@@ -48,64 +48,103 @@ Re-spawn agents with `general-purpose` subagent_type and the same persona prompt
 
 ## Runtime Personas (NOT board members — system agents)
 
-### मनोरमा (Manorama) — AI Medical-Officer Agent (demo mode)
+### वाणी (Vaani) — AI Health-Screening Voice Assistant
 
-- **VAPI assistant ID:** `ef431343-4d6e-4bc6-94ab-0b50ec6f71df` (env: `VAPI_ASSISTANT_ID_MANORAMA`)
-- **Voice:** ElevenLabs Turbo v2.5 / `Matilda` (distinct from Vaani's voice clone — listener perceives the warm-transfer as a real action)
-- **Model:** Claude Sonnet 4.6, temperature 0.3, maxTokens 150
-- **Trigger:** Vaani's `transfer_to_duty_mo` tool transfers the live call to Manorama when a red-flag fires
-- **Role:** reassures the patient, captures 1–2 clarifying clinical details, mentions 108 (or Tele-MANAS 14416 for mental-health crisis), invokes `escalate_to_doctor` for audit, ends call in ≤90s
+- **VAPI assistants:** Hindi `466283fd-a6ed-4652-a960-e486009a85a8`, Tamil `70d9fe0c-24c8-4597-ab7c-7254e77671be`
+- **Voice:** ElevenLabs Turbo v2.5 / `aSFxChEgBmCyExpaDqHd` (gender-neutral)
+- **Model:** Claude Sonnet 4.6 via VAPI (anthropic provider)
+- **STT:** Deepgram nova-3 multi-language (handles HI / EN / TA code-switching)
+- **Role:** captures consent → walks the clinical chain (chief complaint → onset → severity → associated → demographic gate) → on red-flag, fires `escalate_to_doctor` + speaks a calm hold-line → ends ≤3 min wall-clock.
+- **Vaani does NOT diagnose, transfer mid-call to another AI, or speak drug names.** The handoff target is always a real RMP (see below).
 
-### Anand-mandated constraints (CONDITIONAL GO; 7 conditions, T-7 deadline)
+### The handoff target is a real RMP — never another AI
 
-1. **No "Dr." prefix anywhere** — voice, deck, cockpit, code. Agent is `मनोरमा`, not `Dr. Manorama`.
-2. **firstMessage hardcodes 4 claims** (AI / not-doctor / no-treatment / notes-for-doctor): `"नमस्ते। मैं मनोरमा हूँ — एक AI सहायक। मैं डॉक्टर नहीं हूँ और कोई इलाज या दवा नहीं दे सकती। मैं केवल आपकी बात सुनकर डॉक्टर साहब के लिए नोट तैयार करूँगी। क्या आप आगे बात करना चाहेंगे?"` — Kavya may not soften these four bolded claims.
-3. **Slide-1 disclosure verbatim** (must be visible AND voiced once before the demo call): *"Vaani-AI is a research prototype demonstrating AI-assisted clinical decision support. No medical consultation, diagnosis, prescription, or treatment is being rendered in this demonstration. All callers are consented volunteers; no doctor–patient relationship is created. 'मनोरमा' is a software agent, not a registered medical practitioner."*
-4. **Cockpit UI badge**: amber chip `"AI · DEMO MODE"` next to every Manorama action — never collapsible, never hidden. Tooltip: *"AI Clinical Decision-Support Agent · Demonstration only · Not a Registered Medical Practitioner under NMC Act 2019."*
-5. **Column rename in UI**: `mo_signed_at` is displayed as **"AI Draft Timestamp"** (DB column name stays for code compat; the rendered header is what matters legally).
-6. **Five hardcoded red lines**: no drug names, no diagnosis words, no PCPNDT/MHCA/POCSO probing, no Aadhaar/ABHA spoken, no "approved by" claims.
-7. **Volunteer caller consent form** (Anand v3, bilingual): signed by every actor for every run.
+Earlier versions of the demo introduced "मनोरमा (Manorama)" — an AI Medical-Officer Agent that received Vaani's mid-call transfers. That layer is **removed** (2026-06-26). The cockpit IS the RMP queue. A real, named human Registered Medical Practitioner (SMC-verified + NMC HPR-linked under ABDM) sits at the cockpit and is the only one who signs SOAP notes and unlocks the patient callback.
 
-### Production-mode caveat (Anand-mandated paragraph for slide 8 or wherever production differs from demo is shown)
+For demo day on stage, the real RMP is whoever is signed into the cockpit. Their display name + MCI/HPR Reg # appear on every patient-facing message and on slide 8. **TODO before submission:** fill `RMP_NAME`, `RMP_MCI_REG`, and (production-mode) `RMP_PHONE_E164` in `.env.local`. Until then, the cockpit / slide / Vaani prompt all use `डॉक्टर साहब` as a placeholder.
 
-> *"In production, every SOAP note enters a review queue accessible only to RMPs who have completed (i) State Medical Council registration verification, (ii) NMC HPR (Healthcare Professionals Registry) ID linkage under ABDM, and (iii) Vaani-AI's internal training on the Telemedicine Practice Guidelines 2020. Manorama is a clinical decision-support agent that pre-scores triage and pre-drafts SOAP notes; the human RMP independently reviews, may modify, and electronically signs before any patient-facing communication is dispatched. The patient callback is dispatched only after the RMP's HPR-linked digital signature is captured."*
+Production-mode (slide 8 caveat): when Vaani is dialled via Exotel PSTN instead of the web SDK, `escalate_to_doctor` ALSO dials the RMP's `RMP_PHONE_E164` via SIP transfer, so the RMP joins the live call. WebRTC (web-call) does not cross to PSTN cleanly, so the web demo stays cockpit-only.
 
 ### Founder Q&A (judges ask "where's the doctor?") — memorize verbatim
 
-> *"There's no human doctor on stage today because today's demo is a research prototype, not a clinical service. In production, every SOAP note Manorama drafts is gated behind a Registered Medical Practitioner — SMC-verified, HPR-linked — who must independently sign before the patient ever hears from us. What you're seeing on stage is the AI's draft, not a doctor's decision. The patent we're showing is the closed-loop callback that tells the patient the doctor has seen them — and in production, only a real doctor's signature unlocks that callback."*
+> *"The doctor is right there — at the cockpit. Vaani is the front door: she screens, captures the patient's history in their language, and the moment she spots a red flag she pushes the report to the real RMP on call. That RMP is SMC-verified, HPR-linked under ABDM, and they personally review and sign every SOAP note before the patient ever hears back. The patent we're showing is the closed-loop callback — the patient learns the doctor has actually seen them. No AI signs a note. No AI dispenses care. The AI is the listener, the doctor is the decider."*
 
 ---
 
 ## Architecture (locked v2)
 
-### Voice Pipeline (`<1.4s p95`)
+### Voice Pipeline — actual live flow (post-Sarvam swap, post-custom-LLM proxy)
+
 ```
-Caller dials Exotel toll-free
-  → Exotel SIP → VAPI media (Mumbai region)
-    → VAPI VAD (endpointing 300ms for Hindi long vowels)
-      → Sarvam Saarika STT (streaming WS via sarvam-stt-bridge)
-        → [PII redactor strips name/phone/ABHA] ← MANDATORY per Anand §3.9
-          → guardrail chain (PII scrub → off-topic → red-flag rules → Sarvam-M classifier → LLM)
-            → Claude Sonnet 4.6 via AWS Bedrock ap-south-1
-              → output schema validator (zod) → refusal check → confidence gate (0.85)
-                → Sarvam Bulbul TTS (streaming via sarvam-tts-bridge)
-                  → VAPI → speaker
+Caller opens https://app.vaani.ai/asha (web) OR dials Exotel toll-free (PSTN)
+  → VAPI media (Mumbai region) — assistant config:
+      transcriber.provider = custom-transcriber → /functions/v1/sarvam-stt-bridge
+      voice.provider       = custom-voice       → /functions/v1/sarvam-tts-bridge
+      model.provider       = custom-llm         → /functions/v1/vapi-custom-llm
+      tools                = capture_consent, escalate_to_doctor
+    → /functions/v1/sarvam-stt-bridge
+        forwards raw mic audio to Sarvam Saarika v2 (ap-south-1)
+        returns text + word-level timestamps to VAPI
+    → /functions/v1/vapi-custom-llm  (our proxy — closes audit D1 + D2)
+        STEP 1: checkRefusal() on the last user message — PCPNDT / MHCA /
+                POCSO / drug-Rx-attempt. If matched, return verbatim
+                language-appropriate refusal script + insert refusal_log row.
+                Bypass Claude entirely. Statutorily compliant.
+        STEP 2: redactPII() on every non-system message (name / phone /
+                ABHA / Aadhaar / address). Persists pii_token_map row +
+                cross_border_transfers audit row per turn.
+        STEP 3: Anthropic /v1/messages with cache_control: ephemeral on
+                the system block. ~75% input-cost reduction in steady
+                state. (Future: route via Bedrock ap-south-1 for data
+                residency.)
+        STEP 4: Stream Anthropic SSE → OpenAI SSE → VAPI for low-latency
+                voice. content_block_delta → chat.completion.chunk.
+    → /functions/v1/sarvam-tts-bridge
+        Sarvam Bulbul v3 — pace 0.85 for "urgent" path (Aanya §13).
+        Returns PCM s16le @ 16kHz → VAPI → speaker.
+
+  In parallel, VAPI fires server webhooks to /functions/v1/vapi-webhook:
+    → transcript     → handleTranscript → turns table insert (PII-redacted in logs)
+    → status-update  → handleCallStartedIfMissing (idempotent)
+    → end-of-call    → handleEndOfCall → cost breakdown + claim → dispatch to
+                       /functions/v1/process-call-records
+                          → /functions/v1/triage-score
+                              → checkRefusal() (post-call audit) + Aanya rules
+                                (deterministic red-flag layer) + Claude Sonnet
+                                4.6 fallback for ambiguous cases
+                              → insert triage_decisions row
+                          → /functions/v1/soap-generate
+                              → Claude with tool-forced emit_soap JSON
+                              → mo_only_drug_hints persisted (audit D3)
+                              → insert soap_notes row
+
+  Cockpit poll (/functions/v1/cockpit-feed every 3s) shows the new card
+  to the on-call RMP. RMP clicks card → SoapReviewDialog → MO-only
+  amber drug panel → Approve & Sign → /functions/v1/soap-sign sets
+  mo_signed_at + atomically fires /functions/v1/vaani-signoff →
+  Sarvam Bulbul renders patient callback ("डॉक्टर साहब ने देख लिया है …")
+  with drug-scrub applied. Audio b64 returns to the cockpit and plays
+  in-browser; in production, dispatched to Exotel for PSTN callback.
 ```
 
 ### Stack
 
 ```
-Telephony ─── Exotel (India DLT)
-Orchestrator ─ VAPI (custom STT/TTS providers)
-STT ─────── Sarvam Saarika v2 [Deepgram backup]
-TTS ─────── Sarvam Bulbul v2 [ElevenLabs backup]
-Clinical LLM ─ Claude Sonnet 4.6 via Bedrock ap-south-1
-Indic LLM ─── Sarvam-M
-RAG ────────── pgvector + multilingual-e5-large
-Messaging ──── Gupshup WhatsApp + Msg91 SMS
+Telephony ─── VAPI web SDK (browser) + Exotel toll-free (PSTN; India DLT)
+Orchestrator ─ VAPI with custom-LLM, custom-transcriber, custom-voice providers
+STT ─────── Sarvam Saarika v2 (ap-south-1; bridge: sarvam-stt-bridge)
+TTS ─────── Sarvam Bulbul v3 (ap-south-1; bridge: sarvam-tts-bridge)
+Clinical LLM ─ Claude Sonnet 4.6 via Anthropic /v1/messages with cache_control
+                (path-to-Bedrock-ap-south-1 in production-roadmap §3.1)
+Indic LLM ─── Sarvam-M (used by red-flag-check as the LLM-tier classifier
+                fallback for ambiguous transcripts)
+RAG ────────── pgvector + multilingual-e5-large (deferred until
+                clinical-pathways catalogue grows)
+Messaging ──── Gupshup WhatsApp + Msg91 SMS (DLT-registered templates)
 Backend ──── Supabase Postgres ap-south-1 + Edge Functions Deno
-Frontend ─── React + Vite + Shadcn + Tailwind
-ABDM ──────── Sandbox; M2/M3 roadmap
+Frontend ─── React 18 + Vite 5 + Tailwind + Radix Dialog/Tooltip/Popover
+                + framer-motion + @tanstack/react-query + sonner + Sentry
+ABDM ──────── Sandbox today; M2/M3 in docs/production-roadmap.md §1.3
 ```
 
 ### Performance Targets

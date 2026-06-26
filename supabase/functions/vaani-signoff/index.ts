@@ -27,6 +27,7 @@ import { corsHeaders, handleCorsPreflight } from '../_shared/cors.ts';
 import { verifyBearer } from '../_shared/constant-time-compare.ts';
 import { supabaseAdmin } from '../_shared/supabase-admin.ts';
 import { sarvamTTS } from '../_shared/sarvam-client.ts';
+import { scrubDrugMentions } from '../_shared/drug-scrub.ts';
 
 // Per-language opening line. Followed in turn by the doctor's PLAN field
 // from soap_notes (verbatim, the RMP-authored non-drug instructions),
@@ -49,12 +50,18 @@ const SOUL_FALLBACK: Record<string, string> = {
   en: 'Hello. The doctor has reviewed your report. Rest well — we are with you.',
 };
 
-/** Trim Plan to a callback-friendly chunk (≤200 chars, full sentence). */
+/**
+ * Trim Plan to a callback-friendly chunk (≤200 chars, full sentence).
+ * Audit §4: previously this could split mid-word and trailing ellipsis
+ * landed in the middle of Tamil compound words. Now: prefer sentence
+ * boundary; if none, fall back to the last whitespace under maxChars
+ * so we never cut mid-token. Drop the ellipsis on Tamil/long Hindi
+ * plans (they read as "..." spoken aloud).
+ */
 function trimPlan(plan: string, maxChars = 200): string {
   if (!plan) return '';
   const cleaned = plan.replace(/\s+/g, ' ').trim();
   if (cleaned.length <= maxChars) return cleaned;
-  // Cut at the nearest sentence boundary under maxChars
   const cut = cleaned.slice(0, maxChars);
   const lastStop = Math.max(
     cut.lastIndexOf('।'),
@@ -62,7 +69,11 @@ function trimPlan(plan: string, maxChars = 200): string {
     cut.lastIndexOf('!'),
     cut.lastIndexOf('?'),
   );
-  return lastStop > maxChars / 2 ? cut.slice(0, lastStop + 1).trim() : cut.trim() + '…';
+  if (lastStop > maxChars / 2) return cut.slice(0, lastStop + 1).trim();
+  // No sentence boundary in the prefix — cut at last whitespace.
+  const lastSpace = cut.lastIndexOf(' ');
+  if (lastSpace > maxChars / 2) return cut.slice(0, lastSpace).trim();
+  return cut.trim();  // hard cut; no ellipsis — TTS reads them as words
 }
 
 const SARVAM_LANG_MAP: Record<string, string> = {
@@ -143,7 +154,26 @@ Deno.serve(async (req) => {
   // doctor's plan (read verbatim from soap_notes.plan, RMP-authored).
   // No drug names — soap-generate's contract keeps drugs in
   // mo_only_drug_hints, so plan is patient-safe to speak aloud.
-  const planSnippet = trimPlan(String((soap as { plan?: string }).plan ?? ''));
+  const rawPlan = String((soap as { plan?: string }).plan ?? '');
+  // Belt-and-braces drug-scrub before reading anything to TTS.
+  // The DB CHECK constraint catches drug names at write time; this catches
+  // anything the LLM emits that the constraint missed (case differences,
+  // homophones, transliteration variants).
+  const scrubbed = scrubDrugMentions(rawPlan, lang);
+  if (scrubbed.hit) {
+    // Audit any leak we caught at runtime — the LLM should not be emitting
+    // drug names in the patient-facing plan field.
+    await sb.from('ops_incidents').insert({
+      severity: 'high',
+      source: 'vaani_signoff',
+      category: 'drug_name_in_plan',
+      title: `vaani-signoff scrubbed drug mention(s) from SOAP plan`,
+      description: `soap_id=${soap.id} hits=${scrubbed.detections.join(',')}`,
+      related_call_id: soap.call_id,
+    }).then(() => {}, () => {/* best-effort */});
+    console.warn(`[vaani-signoff] drug mention scrubbed from plan: ${scrubbed.detections.join(',')}`);
+  }
+  const planSnippet = trimPlan(scrubbed.cleaned);
   const message = planSnippet
     ? `${SOUL_OPENER[lang] ?? SOUL_OPENER.hi}${planSnippet}${SOUL_CLOSER[lang] ?? SOUL_CLOSER.hi}`
     : (SOUL_FALLBACK[lang] ?? SOUL_FALLBACK.hi);
@@ -171,6 +201,17 @@ Deno.serve(async (req) => {
   }
 
   // ── Step 5: Insert dispatch row ────────────────────────────
+  // Audit §4: dispatched_at should NOT be stamped on failed status.
+  // Audit §4: handle the TOCTOU race when two RMP clicks fire at once —
+  // the unique idempotency_key throws 23505; treat it as already_dispatched
+  // (200 with existing row) instead of bubbling 500.
+  // agent-number wiring (docs/agent-number.md §2): stamp caller_id =
+  // AGENT_PHONE_E164 so call-dispatcher's Exotel dial uses Vaani's own
+  // E.164 (same number patients dialled in on). Falls back to null when
+  // unset — call-dispatcher then uses EXOTEL_VIRTUAL_NUMBER as the default.
+  const callerId = Deno.env.get('AGENT_PHONE_E164') ?? null;
+  const nowIso = new Date().toISOString();
+  const dispatchedAt = ttsError ? null : nowIso;
   const { data: inserted, error: insertErr } = await sb
     .from('call_dispatch_queue')
     .insert({
@@ -186,10 +227,11 @@ Deno.serve(async (req) => {
         audio_format: 'wav',
         audio_bytes: audioBytes,
         tts_error: ttsError,
+        caller_id: callerId,
       },
       channel: 'voice',
-      scheduled_at: new Date().toISOString(),
-      dispatched_at: new Date().toISOString(),
+      scheduled_at: nowIso,
+      dispatched_at: dispatchedAt,
       status: ttsError ? 'failed' : 'dispatched',
       trigger: 'mo_action',
       trigger_source_table: 'soap_notes',
@@ -199,6 +241,23 @@ Deno.serve(async (req) => {
     })
     .select('id')
     .single();
+
+  if (insertErr && (insertErr as any).code === '23505') {
+    // Unique-key clash on idempotency_key → another concurrent sign hit
+    // first. Return the existing row instead of a 500.
+    const { data: existing2 } = await sb
+      .from('call_dispatch_queue')
+      .select('id, status')
+      .eq('idempotency_key', idempotencyKey)
+      .maybeSingle();
+    return new Response(JSON.stringify({
+      dispatch_id: existing2?.id,
+      already_dispatched: true,
+      status: existing2?.status ?? 'dispatched',
+      message,
+      audio_b64: audioB64,
+    }), { status: 200, headers: { ...corsHeaders, 'content-type': 'application/json' } });
+  }
 
   if (insertErr) {
     return jsonErr(500, 'dispatch_insert_failed', insertErr.message);

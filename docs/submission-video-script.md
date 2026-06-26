@@ -27,12 +27,12 @@ Total runtime target: **4 minutes 50 seconds**, leaving 10s safety margin.
 **Visual:** stat panel.
 
 **VO (60 words):**
-> Five clinical stages waste doctor hours: pre-visit capture, in-visit transcription, shadow diagnosis, low-cost vernacular STT, and post-visit communication. Most solutions pick one. The hackathon brief explicitly rewards threading multiple stages into one coherent agent. **Vaani threads three** — pre-visit screening, AI shadow diagnosis with differential, and a post-visit voice callback. **And** it ships a fourth — in-visit ambient transcription — under the same architecture.
+> Five clinical stages waste doctor hours: pre-visit capture, in-visit transcription, AI-assisted presumptive screening, low-cost vernacular STT, and post-visit communication. Most solutions pick one. The hackathon brief explicitly rewards threading multiple stages into one coherent agent. **Vaani threads three** — pre-visit screening, AI-assisted presumptive screening with a differential for the doctor, and a post-visit voice callback. **And** it ships a fourth — in-visit ambient transcription — under the same architecture.
 
 **On-screen:**
 - Stage 1: Pre-Visit Capture ✅
 - Stage 2: In-Visit Transcription + EMR ✅
-- Stage 3: AI Shadow Diagnosis ✅
+- Stage 3: AI-assisted Presumptive Screening ✅
 - Stage 4: Low-Cost STT (₹0.36/min) ✅
 - Stage 5: Post-Visit Voice Callback ✅
 
@@ -75,7 +75,7 @@ C. Impersonal/passive: "समझ आ गया"
 
 **On-screen metrics table** (the report .md preview).
 
-> **The Stage 3 ask** — AI shadow diagnosis benchmarked against junior GPs — requires real GPs we don't yet have. So we shipped the methodology and a reproducible comparator. Post-pilot we replace synthetic GP responses with real ones.
+> **The Stage 3 ask** — AI-assisted presumptive screening benchmarked against junior GPs — requires real GPs we don't yet have. So we shipped the methodology and a reproducible comparator. Post-pilot we replace synthetic GP responses with real ones.
 
 ---
 
