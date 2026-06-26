@@ -60,7 +60,18 @@ export default function AshaApp() {
     });
     vapi.on('error', (err: any) => {
       console.error('[vapi] error', err);
-      toast.error('Call error: ' + (err?.errorMsg ?? err?.message ?? 'unknown'));
+      // Surface every plausible field so we never show a bare "unknown" again.
+      const detail =
+        err?.errorMsg ??
+        err?.error?.message ??
+        err?.error?.errorMsg ??
+        err?.error?.error ??
+        err?.message ??
+        err?.type ??
+        (typeof err === 'string' ? err : JSON.stringify(err)?.slice(0, 200)) ??
+        'unknown';
+      const keyPreview = String(PUBLIC_KEY ?? '').slice(0, 8) || '<missing>';
+      toast.error(`Call error: ${detail}  ·  key=${keyPreview}…`);
       setState('idle');
     });
 
