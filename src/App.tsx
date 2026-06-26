@@ -6,7 +6,7 @@ import Auth from '@/pages/Auth';
 import Cockpit from '@/pages/Cockpit';
 import AshaApp from '@/pages/AshaApp';
 import NotFound from '@/pages/NotFound';
-import { DemoGate } from '@/components/DemoGate';
+import { RequireAuth } from '@/components/RequireAuth';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 const queryClient = new QueryClient({
@@ -29,8 +29,22 @@ export default function App() {
           <Routes>
             <Route path="/" element={<Landing />} />
             <Route path="/auth" element={<Auth />} />
-            <Route path="/cockpit/*" element={<DemoGate><Cockpit /></DemoGate>} />
-            <Route path="/asha/*" element={<DemoGate><AshaApp /></DemoGate>} />
+            <Route
+              path="/cockpit/*"
+              element={
+                <RequireAuth role={['rmp', 'admin']}>
+                  <Cockpit />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/asha/*"
+              element={
+                <RequireAuth>
+                  <AshaApp />
+                </RequireAuth>
+              }
+            />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
