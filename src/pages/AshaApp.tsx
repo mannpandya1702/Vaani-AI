@@ -112,7 +112,10 @@ export default function AshaApp() {
       <header className="border-b px-4 py-3 flex items-center gap-2">
         <span className="vaani-bindi" />
         <span className="font-semibold">vaani · ASHA</span>
-        <span className="ml-auto inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider rounded-md border border-amber-500/70 bg-amber-500/10 text-amber-700 dark:text-amber-300 px-2 py-1">
+        <span className="ml-auto inline-flex items-center gap-2 text-[10px] font-mono rounded-md border bg-muted/40 text-muted-foreground px-2 py-1" title="Public key prefix loaded by Vite from .env.local">
+          key: {String(PUBLIC_KEY ?? '').slice(0, 8) || '<missing>'}
+        </span>
+        <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider rounded-md border border-amber-500/70 bg-amber-500/10 text-amber-700 dark:text-amber-300 px-2 py-1">
           AI · DEMO MODE
         </span>
       </header>
