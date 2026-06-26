@@ -48,31 +48,26 @@ Re-spawn agents with `general-purpose` subagent_type and the same persona prompt
 
 ## Runtime Personas (NOT board members — system agents)
 
-### मनोरमा (Manorama) — AI Medical-Officer Agent (demo mode)
+### वाणी (Vaani) — AI Health-Screening Voice Assistant
 
-- **VAPI assistant ID:** `ef431343-4d6e-4bc6-94ab-0b50ec6f71df` (env: `VAPI_ASSISTANT_ID_MANORAMA`)
-- **Voice:** ElevenLabs Turbo v2.5 / `Matilda` (distinct from Vaani's voice clone — listener perceives the warm-transfer as a real action)
-- **Model:** Claude Sonnet 4.6, temperature 0.3, maxTokens 150
-- **Trigger:** Vaani's `transfer_to_duty_mo` tool transfers the live call to Manorama when a red-flag fires
-- **Role:** reassures the patient, captures 1–2 clarifying clinical details, mentions 108 (or Tele-MANAS 14416 for mental-health crisis), invokes `escalate_to_doctor` for audit, ends call in ≤90s
+- **VAPI assistants:** Hindi `466283fd-a6ed-4652-a960-e486009a85a8`, Tamil `70d9fe0c-24c8-4597-ab7c-7254e77671be`
+- **Voice:** ElevenLabs Turbo v2.5 / `aSFxChEgBmCyExpaDqHd` (gender-neutral)
+- **Model:** Claude Sonnet 4.6 via VAPI (anthropic provider)
+- **STT:** Deepgram nova-3 multi-language (handles HI / EN / TA code-switching)
+- **Role:** captures consent → walks the clinical chain (chief complaint → onset → severity → associated → demographic gate) → on red-flag, fires `escalate_to_doctor` + speaks a calm hold-line → ends ≤3 min wall-clock.
+- **Vaani does NOT diagnose, transfer mid-call to another AI, or speak drug names.** The handoff target is always a real RMP (see below).
 
-### Anand-mandated constraints (CONDITIONAL GO; 7 conditions, T-7 deadline)
+### The handoff target is a real RMP — never another AI
 
-1. **No "Dr." prefix anywhere** — voice, deck, cockpit, code. Agent is `मनोरमा`, not `Dr. Manorama`.
-2. **firstMessage hardcodes 4 claims** (AI / not-doctor / no-treatment / notes-for-doctor): `"नमस्ते। मैं मनोरमा हूँ — एक AI सहायक। मैं डॉक्टर नहीं हूँ और कोई इलाज या दवा नहीं दे सकती। मैं केवल आपकी बात सुनकर डॉक्टर साहब के लिए नोट तैयार करूँगी। क्या आप आगे बात करना चाहेंगे?"` — Kavya may not soften these four bolded claims.
-3. **Slide-1 disclosure verbatim** (must be visible AND voiced once before the demo call): *"Vaani-AI is a research prototype demonstrating AI-assisted clinical decision support. No medical consultation, diagnosis, prescription, or treatment is being rendered in this demonstration. All callers are consented volunteers; no doctor–patient relationship is created. 'मनोरमा' is a software agent, not a registered medical practitioner."*
-4. **Cockpit UI badge**: amber chip `"AI · DEMO MODE"` next to every Manorama action — never collapsible, never hidden. Tooltip: *"AI Clinical Decision-Support Agent · Demonstration only · Not a Registered Medical Practitioner under NMC Act 2019."*
-5. **Column rename in UI**: `mo_signed_at` is displayed as **"AI Draft Timestamp"** (DB column name stays for code compat; the rendered header is what matters legally).
-6. **Five hardcoded red lines**: no drug names, no diagnosis words, no PCPNDT/MHCA/POCSO probing, no Aadhaar/ABHA spoken, no "approved by" claims.
-7. **Volunteer caller consent form** (Anand v3, bilingual): signed by every actor for every run.
+Earlier versions of the demo introduced "मनोरमा (Manorama)" — an AI Medical-Officer Agent that received Vaani's mid-call transfers. That layer is **removed** (2026-06-26). The cockpit IS the RMP queue. A real, named human Registered Medical Practitioner (SMC-verified + NMC HPR-linked under ABDM) sits at the cockpit and is the only one who signs SOAP notes and unlocks the patient callback.
 
-### Production-mode caveat (Anand-mandated paragraph for slide 8 or wherever production differs from demo is shown)
+For demo day on stage, the real RMP is whoever is signed into the cockpit. Their display name + MCI/HPR Reg # appear on every patient-facing message and on slide 8. **TODO before submission:** fill `RMP_NAME`, `RMP_MCI_REG`, and (production-mode) `RMP_PHONE_E164` in `.env.local`. Until then, the cockpit / slide / Vaani prompt all use `डॉक्टर साहब` as a placeholder.
 
-> *"In production, every SOAP note enters a review queue accessible only to RMPs who have completed (i) State Medical Council registration verification, (ii) NMC HPR (Healthcare Professionals Registry) ID linkage under ABDM, and (iii) Vaani-AI's internal training on the Telemedicine Practice Guidelines 2020. Manorama is a clinical decision-support agent that pre-scores triage and pre-drafts SOAP notes; the human RMP independently reviews, may modify, and electronically signs before any patient-facing communication is dispatched. The patient callback is dispatched only after the RMP's HPR-linked digital signature is captured."*
+Production-mode (slide 8 caveat): when Vaani is dialled via Exotel PSTN instead of the web SDK, `escalate_to_doctor` ALSO dials the RMP's `RMP_PHONE_E164` via SIP transfer, so the RMP joins the live call. WebRTC (web-call) does not cross to PSTN cleanly, so the web demo stays cockpit-only.
 
 ### Founder Q&A (judges ask "where's the doctor?") — memorize verbatim
 
-> *"There's no human doctor on stage today because today's demo is a research prototype, not a clinical service. In production, every SOAP note Manorama drafts is gated behind a Registered Medical Practitioner — SMC-verified, HPR-linked — who must independently sign before the patient ever hears from us. What you're seeing on stage is the AI's draft, not a doctor's decision. The patent we're showing is the closed-loop callback that tells the patient the doctor has seen them — and in production, only a real doctor's signature unlocks that callback."*
+> *"The doctor is right there — at the cockpit. Vaani is the front door: she screens, captures the patient's history in their language, and the moment she spots a red flag she pushes the report to the real RMP on call. That RMP is SMC-verified, HPR-linked under ABDM, and they personally review and sign every SOAP note before the patient ever hears back. The patent we're showing is the closed-loop callback — the patient learns the doctor has actually seen them. No AI signs a note. No AI dispenses care. The AI is the listener, the doctor is the decider."*
 
 ---
 
