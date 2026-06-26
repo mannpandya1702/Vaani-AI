@@ -18,10 +18,14 @@
 import { corsHeaders, handleCorsPreflight } from '../_shared/cors.ts';
 import { verifyVapiWebhook } from '../_shared/vapi-auth.ts';
 import { supabaseAdmin } from '../_shared/supabase-admin.ts';
+import { healthOk, isHealthCheck } from '../_shared/health.ts';
 
 Deno.serve(async (req) => {
   const preflight = handleCorsPreflight(req);
   if (preflight) return preflight;
+  if (isHealthCheck(req)) {
+    return healthOk(req, { name: 'vapi-webhook', deps: ['supabase', 'process-call-records'] });
+  }
 
   const t0 = Date.now();
   let rawBody = '';

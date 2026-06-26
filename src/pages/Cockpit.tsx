@@ -112,11 +112,11 @@ export default function Cockpit() {
 function DemoDisclosureChip() {
   return (
     <span
-      className="ml-auto inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider rounded-md border border-amber-500/70 bg-amber-500/10 text-amber-700 dark:text-amber-300 px-2 py-1"
-      title="AI Clinical Decision-Support Agent · Demonstration only · Not a Registered Medical Practitioner under NMC Act 2019 · Output is not a substitute for licensed clinical review."
+      className="ml-auto inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider rounded-md border bg-foreground/5 text-foreground/80 px-2 py-1"
+      title="AI-Assisted Screening · Pilot — Vaani is an AI screener; every SOAP note is reviewed and signed by a Registered Medical Practitioner under NMC Act 2019 before any patient-facing action."
     >
       <Shield className="w-3 h-3" />
-      AI · DEMO MODE
+      AI-Assisted · Pilot
     </span>
   );
 }
@@ -490,7 +490,7 @@ function SoapReviewDialog({
                 <div className="rounded-lg border bg-amber-500/5 p-3 text-xs">
                   <div className="font-semibold mb-1 text-amber-700 dark:text-amber-300">AI Draft Timestamp</div>
                   <div className="text-muted-foreground">
-                    AI-pre-drafted from Vaani's screening transcript. Demo mode · Not a Registered Medical Practitioner. The named RMP independently reviews + signs.
+                    AI-pre-drafted from Vaani's screening transcript. The named RMP (HPR-linked under ABDM) independently reviews and signs before any patient-facing action.
                     {isSigned && (
                       <> Signed at {new Date(row.soap.mo_signed_at!).toLocaleString()}.</>
                     )}
@@ -549,31 +549,102 @@ function SoapSection({ label, body }: { label: string; body: string }) {
 }
 
 /* ─────────────────────────────────────────────────────────── */
-/* Other tabs (placeholders for demo)                          */
+/* Patients · Notes · Me — render real data from cockpit-feed */
 
 function Patients() {
+  const { data } = useCockpitFeed();
+  const rows = data?.rows ?? [];
+  // Group by patient id (callers we've seen).
+  const byPatient = new Map<string, { id: string; ageSex: string; lang: string; calls: number; latestBand: TriageBand; latestAt: string }>();
+  for (const r of rows) {
+    if (!r.patient) continue;
+    const key = r.patient.id;
+    const prev = byPatient.get(key);
+    const ageSex = `${r.patient.sex ?? '?'} · ${r.patient.age_years ?? '?'}y`;
+    const lang = r.patient.preferred_language ?? '?';
+    if (!prev) {
+      byPatient.set(key, { id: key, ageSex, lang, calls: 1, latestBand: r.triage.band, latestAt: r.triage.created_at });
+    } else {
+      prev.calls += 1;
+      if (r.triage.created_at > prev.latestAt) { prev.latestAt = r.triage.created_at; prev.latestBand = r.triage.band; }
+    }
+  }
+  const list = Array.from(byPatient.values()).sort((a, b) => b.latestAt.localeCompare(a.latestAt));
+
   return (
     <div className="container max-w-screen-md p-4">
       <h2 className="text-2xl font-semibold tracking-tight mb-4">Patients</h2>
-      <p className="text-muted-foreground">Patient timeline — coming post-demo.</p>
+      {list.length === 0 && <p className="text-sm text-muted-foreground">No patients yet — they'll appear after their first call.</p>}
+      <ul className="space-y-2">
+        {list.map((p) => (
+          <li key={p.id} className="rounded-lg border bg-card p-3 flex items-center gap-3">
+            <div className="w-1.5 self-stretch rounded-full" style={{ background: bandClasses(p.latestBand).dot.replace('bg-', '') }} />
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium">{p.ageSex} · {p.lang.toUpperCase()}</div>
+              <div className="text-xs text-muted-foreground">{p.calls} call{p.calls === 1 ? '' : 's'} · last {timeAgo(p.latestAt)}</div>
+            </div>
+            <BandPill band={p.latestBand} count={1} />
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
 
 function NotesIndex() {
+  const { data } = useCockpitFeed();
+  const rows = (data?.rows ?? []).filter((r) => r.soap?.mo_signed_at);
   return (
     <div className="container max-w-screen-md p-4">
-      <h2 className="text-2xl font-semibold tracking-tight mb-4">SOAP Notes</h2>
-      <p className="text-muted-foreground">All signed SOAPs — view via Queue cards for now.</p>
+      <h2 className="text-2xl font-semibold tracking-tight mb-4">Signed SOAP notes</h2>
+      {rows.length === 0 && <p className="text-sm text-muted-foreground">No signed notes yet.</p>}
+      <ul className="space-y-2">
+        {rows.map((r) => (
+          <li key={r.triage.id} className="rounded-lg border bg-card p-3">
+            <div className="flex items-center gap-2">
+              <BandPill band={r.triage.band} count={1} />
+              <span className="text-sm font-medium truncate">{r.triage.presumptive_label.replace(/_/g, ' ')}</span>
+              <span className="ml-auto text-xs text-muted-foreground">{timeAgo(r.soap!.mo_signed_at!)}</span>
+            </div>
+            <div className="text-xs text-muted-foreground mt-1 line-clamp-2">{r.soap?.assessment}</div>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
 
 function Me() {
+  const { data } = useCockpitFeed();
+  const rows = data?.rows ?? [];
+  const signedToday = rows.filter((r) => {
+    const ts = r.soap?.mo_signed_at;
+    if (!ts) return false;
+    return new Date(ts).toDateString() === new Date().toDateString();
+  }).length;
+  const pending = rows.filter((r) => !r.soap?.mo_signed_at).length;
+  const rmpName = (import.meta as any).env?.VITE_RMP_NAME ?? 'डॉक्टर साहब';
+  const rmpReg = (import.meta as any).env?.VITE_RMP_MCI_REG ?? '—';
   return (
     <div className="container max-w-screen-md p-4">
       <h2 className="text-2xl font-semibold tracking-tight mb-4">You</h2>
-      <p className="text-muted-foreground">Profile + on-call toggle — post-demo.</p>
+      <div className="rounded-lg border bg-card p-4 mb-4">
+        <div className="text-sm font-semibold">{rmpName}</div>
+        <div className="text-xs text-muted-foreground">MCI / HPR Reg # {rmpReg}</div>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <Stat label="Signed today" value={signedToday} />
+        <Stat label="Pending" value={pending} />
+      </div>
+    </div>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-lg border bg-card p-3">
+      <div className="text-2xl font-bold">{value}</div>
+      <div className="text-xs text-muted-foreground">{label}</div>
     </div>
   );
 }

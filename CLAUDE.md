@@ -73,34 +73,78 @@ Production-mode (slide 8 caveat): when Vaani is dialled via Exotel PSTN instead 
 
 ## Architecture (locked v2)
 
-### Voice Pipeline (`<1.4s p95`)
+### Voice Pipeline — actual live flow (post-Sarvam swap, post-custom-LLM proxy)
+
 ```
-Caller dials Exotel toll-free
-  → Exotel SIP → VAPI media (Mumbai region)
-    → VAPI VAD (endpointing 300ms for Hindi long vowels)
-      → Sarvam Saarika STT (streaming WS via sarvam-stt-bridge)
-        → [PII redactor strips name/phone/ABHA] ← MANDATORY per Anand §3.9
-          → guardrail chain (PII scrub → off-topic → red-flag rules → Sarvam-M classifier → LLM)
-            → Claude Sonnet 4.6 via AWS Bedrock ap-south-1
-              → output schema validator (zod) → refusal check → confidence gate (0.85)
-                → Sarvam Bulbul TTS (streaming via sarvam-tts-bridge)
-                  → VAPI → speaker
+Caller opens https://app.vaani.ai/asha (web) OR dials Exotel toll-free (PSTN)
+  → VAPI media (Mumbai region) — assistant config:
+      transcriber.provider = custom-transcriber → /functions/v1/sarvam-stt-bridge
+      voice.provider       = custom-voice       → /functions/v1/sarvam-tts-bridge
+      model.provider       = custom-llm         → /functions/v1/vapi-custom-llm
+      tools                = capture_consent, escalate_to_doctor
+    → /functions/v1/sarvam-stt-bridge
+        forwards raw mic audio to Sarvam Saarika v2 (ap-south-1)
+        returns text + word-level timestamps to VAPI
+    → /functions/v1/vapi-custom-llm  (our proxy — closes audit D1 + D2)
+        STEP 1: checkRefusal() on the last user message — PCPNDT / MHCA /
+                POCSO / drug-Rx-attempt. If matched, return verbatim
+                language-appropriate refusal script + insert refusal_log row.
+                Bypass Claude entirely. Statutorily compliant.
+        STEP 2: redactPII() on every non-system message (name / phone /
+                ABHA / Aadhaar / address). Persists pii_token_map row +
+                cross_border_transfers audit row per turn.
+        STEP 3: Anthropic /v1/messages with cache_control: ephemeral on
+                the system block. ~75% input-cost reduction in steady
+                state. (Future: route via Bedrock ap-south-1 for data
+                residency.)
+        STEP 4: Stream Anthropic SSE → OpenAI SSE → VAPI for low-latency
+                voice. content_block_delta → chat.completion.chunk.
+    → /functions/v1/sarvam-tts-bridge
+        Sarvam Bulbul v3 — pace 0.85 for "urgent" path (Aanya §13).
+        Returns PCM s16le @ 16kHz → VAPI → speaker.
+
+  In parallel, VAPI fires server webhooks to /functions/v1/vapi-webhook:
+    → transcript     → handleTranscript → turns table insert (PII-redacted in logs)
+    → status-update  → handleCallStartedIfMissing (idempotent)
+    → end-of-call    → handleEndOfCall → cost breakdown + claim → dispatch to
+                       /functions/v1/process-call-records
+                          → /functions/v1/triage-score
+                              → checkRefusal() (post-call audit) + Aanya rules
+                                (deterministic red-flag layer) + Claude Sonnet
+                                4.6 fallback for ambiguous cases
+                              → insert triage_decisions row
+                          → /functions/v1/soap-generate
+                              → Claude with tool-forced emit_soap JSON
+                              → mo_only_drug_hints persisted (audit D3)
+                              → insert soap_notes row
+
+  Cockpit poll (/functions/v1/cockpit-feed every 3s) shows the new card
+  to the on-call RMP. RMP clicks card → SoapReviewDialog → MO-only
+  amber drug panel → Approve & Sign → /functions/v1/soap-sign sets
+  mo_signed_at + atomically fires /functions/v1/vaani-signoff →
+  Sarvam Bulbul renders patient callback ("डॉक्टर साहब ने देख लिया है …")
+  with drug-scrub applied. Audio b64 returns to the cockpit and plays
+  in-browser; in production, dispatched to Exotel for PSTN callback.
 ```
 
 ### Stack
 
 ```
-Telephony ─── Exotel (India DLT)
-Orchestrator ─ VAPI (custom STT/TTS providers)
-STT ─────── Sarvam Saarika v2 [Deepgram backup]
-TTS ─────── Sarvam Bulbul v2 [ElevenLabs backup]
-Clinical LLM ─ Claude Sonnet 4.6 via Bedrock ap-south-1
-Indic LLM ─── Sarvam-M
-RAG ────────── pgvector + multilingual-e5-large
-Messaging ──── Gupshup WhatsApp + Msg91 SMS
+Telephony ─── VAPI web SDK (browser) + Exotel toll-free (PSTN; India DLT)
+Orchestrator ─ VAPI with custom-LLM, custom-transcriber, custom-voice providers
+STT ─────── Sarvam Saarika v2 (ap-south-1; bridge: sarvam-stt-bridge)
+TTS ─────── Sarvam Bulbul v3 (ap-south-1; bridge: sarvam-tts-bridge)
+Clinical LLM ─ Claude Sonnet 4.6 via Anthropic /v1/messages with cache_control
+                (path-to-Bedrock-ap-south-1 in production-roadmap §3.1)
+Indic LLM ─── Sarvam-M (used by red-flag-check as the LLM-tier classifier
+                fallback for ambiguous transcripts)
+RAG ────────── pgvector + multilingual-e5-large (deferred until
+                clinical-pathways catalogue grows)
+Messaging ──── Gupshup WhatsApp + Msg91 SMS (DLT-registered templates)
 Backend ──── Supabase Postgres ap-south-1 + Edge Functions Deno
-Frontend ─── React + Vite + Shadcn + Tailwind
-ABDM ──────── Sandbox; M2/M3 roadmap
+Frontend ─── React 18 + Vite 5 + Tailwind + Radix Dialog/Tooltip/Popover
+                + framer-motion + @tanstack/react-query + sonner + Sentry
+ABDM ──────── Sandbox today; M2/M3 in docs/production-roadmap.md §1.3
 ```
 
 ### Performance Targets

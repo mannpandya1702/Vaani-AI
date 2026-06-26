@@ -24,9 +24,10 @@ export default function Landing() {
           एक AI सहायक, हर ASHA के लिए — हर मरीज़ की भाषा में।
         </p>
         <p className="text-lg max-w-2xl text-vaani-paper/70 mb-12 leading-relaxed">
-          AI-assisted health screening, triage, and follow-up for India&apos;s
-          primary care system. Built for ASHA workers and rural PHCs. Plugs into
-          ABDM.
+          AI-assisted voice screening, deterministic red-flag triage, and a
+          named-RMP signed callback loop. Built for ASHA workers and rural PHCs.
+          Indic STT + TTS (Sarvam) · Claude Sonnet 4.6 · DPDP-compliant PII
+          redaction · ABDM-ready.
         </p>
 
         {/* Stats */}
@@ -42,13 +43,13 @@ export default function Landing() {
             to="/asha"
             className="inline-flex items-center justify-center px-6 py-3 rounded-lg bg-vaani-saffron text-vaani-navy font-semibold hover:opacity-90 transition shadow-lg shadow-vaani-saffron/20"
           >
-            Try the demo →
+            Start a screening →
           </Link>
           <Link
             to="/cockpit"
             className="inline-flex items-center justify-center px-6 py-3 rounded-lg border border-vaani-paper/30 text-vaani-paper hover:bg-vaani-paper/10 transition"
           >
-            Doctor cockpit
+            RMP cockpit
           </Link>
           <Link
             to="/auth"
@@ -58,13 +59,15 @@ export default function Landing() {
           </Link>
         </div>
 
-        {/* Footer disclaimer per Anand */}
+        {/* Footer disclaimer */}
         <div className="mt-24 pt-8 border-t border-vaani-paper/20 text-sm text-vaani-paper/60 space-y-2">
           <p>
-            Vaani-AI provides AI-assisted clinical decision support. Not a
-            substitute for professional medical advice.
+            Vaani is an AI screener — every clinical note is reviewed and signed
+            by a Registered Medical Practitioner under NMC Act 2019. Not a
+            substitute for emergency care; dial 108 in an emergency.
           </p>
-          <p>ABDM Sandbox integration in progress; production rollout post-pilot.</p>
+          <p>ABDM Sandbox integration in progress · DPDP 2023 compliant ·
+            Audit log retained per TPG 2020 ¶3.5.</p>
         </div>
       </div>
     </main>

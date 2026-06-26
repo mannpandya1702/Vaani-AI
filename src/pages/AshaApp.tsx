@@ -205,8 +205,8 @@ export default function AshaApp() {
         <span className="ml-auto inline-flex items-center gap-2 text-[10px] font-mono rounded-md border bg-muted/40 text-muted-foreground px-2 py-1" title="Public key prefix loaded by Vite from .env.local">
           key: {String(PUBLIC_KEY ?? '').slice(0, 8) || '<missing>'}
         </span>
-        <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider rounded-md border border-amber-500/70 bg-amber-500/10 text-amber-700 dark:text-amber-300 px-2 py-1">
-          AI · DEMO MODE
+        <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider rounded-md border bg-foreground/5 text-foreground/80 px-2 py-1" title="AI-Assisted Screening · Pilot — every clinical note is reviewed and signed by a Registered Medical Practitioner.">
+          AI-Assisted · Pilot
         </span>
       </header>
 
@@ -409,22 +409,22 @@ function DisclosureModal({ open, onAcknowledge }: { open: boolean; onAcknowledge
             <div className="flex-1">
               <Dialog.Title className="text-lg font-semibold leading-tight">Before you begin</Dialog.Title>
               <Dialog.Description className="text-xs text-muted-foreground">
-                Anand-mandated demo disclosure · NMC Act 2019 · IMC Reg 6.1.1
+                Mandatory pilot disclosure · DPDP 2023 · NMC Act 2019 · IMC Reg 6.1.1
               </Dialog.Description>
             </div>
-            <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider rounded-md border border-amber-500/70 bg-amber-500/10 text-amber-700 dark:text-amber-300 px-2 py-1">
-              AI · DEMO MODE
+            <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider rounded-md border bg-foreground/5 text-foreground/80 px-2 py-1">
+              AI-Assisted · Pilot
             </span>
           </div>
 
           <div className="p-5 space-y-4 text-sm leading-relaxed">
             <p>
-              Vaani-AI is a <b>research prototype</b> demonstrating AI-assisted clinical decision support. No medical
-              consultation, diagnosis, prescription, or treatment is being rendered in this demonstration. All callers
-              are consented adult volunteers; no doctor–patient relationship is created. <b>"Vaani" is an AI voice
-              screener — not a registered medical practitioner.</b> The doctor at the cockpit is a real, named,
-              SMC-verified, HPR-linked Registered Medical Practitioner who independently reviews and signs every
-              clinical note.
+              Vaani-AI is an <b>AI-assisted screening pilot</b>. Vaani is an AI voice screener, NOT a doctor — she
+              captures your symptoms in your language and passes the report to a real Registered Medical Practitioner.
+              No diagnosis, prescription, or treatment is given by the AI. <b>The doctor on the cockpit is a real,
+              named, SMC-verified, HPR-linked under ABDM RMP</b> who independently reviews and signs every clinical
+              note before any patient-facing action. By proceeding, you consent to the call being recorded for that
+              review.
             </p>
 
             <p lang="hi" className="font-hind text-base">
@@ -442,7 +442,7 @@ function DisclosureModal({ open, onAcknowledge }: { open: boolean; onAcknowledge
                   onChange={(e) => setC1(e.target.checked)}
                   className="mt-0.5 w-4 h-4 accent-vaani-saffron"
                 />
-                <span>I understand Vaani is an AI, NOT a doctor, and this demonstration provides no medical care.</span>
+                <span>I understand Vaani is an AI, NOT a doctor. Any clinical advice comes from the RMP after they review my report.</span>
               </label>
               <label className="flex items-start gap-3 cursor-pointer">
                 <input
