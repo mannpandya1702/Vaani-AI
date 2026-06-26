@@ -363,11 +363,22 @@ function SoapReviewDialog({
         const blob = new Blob([buf], { type: 'audio/wav' });
         const url = URL.createObjectURL(blob);
         if (audioRef.current) {
+          // Revoke previous blob URL to avoid the leak the audit flagged.
+          const prev = audioRef.current.dataset.blobUrl;
+          if (prev) try { URL.revokeObjectURL(prev); } catch {/* noop */}
           audioRef.current.src = url;
+          audioRef.current.dataset.blobUrl = url;
           await audioRef.current.play().catch(() => {/* autoplay blocked */});
         }
       }
-      toast.success('Patient called back: डॉक्टर साहब ने देख लिया है');
+      // Language-aware toast — audit flagged Tamil-patient calls
+      // showing a Hindi confirmation string.
+      const TOAST_BY_LANG: Record<string, string> = {
+        hi: 'मरीज़ को कॉल हो गई — डॉक्टर साहब ने देख लिया है',
+        ta: 'நோயாளியை அழைத்தது — டாக்டர் பார்த்துவிட்டார்',
+        en: 'Patient called back — the doctor has reviewed your report',
+      };
+      toast.success(TOAST_BY_LANG[lang] ?? TOAST_BY_LANG.hi);
     } catch (e: any) {
       toast.error(`Sign failed: ${e?.message ?? e}`);
     } finally {

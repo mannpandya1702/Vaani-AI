@@ -7,6 +7,7 @@ import Cockpit from '@/pages/Cockpit';
 import AshaApp from '@/pages/AshaApp';
 import NotFound from '@/pages/NotFound';
 import { DemoGate } from '@/components/DemoGate';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -21,17 +22,19 @@ const queryClient = new QueryClient({
 
 export default function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <Toaster position="top-center" richColors />
-        <Routes>
-          <Route path="/" element={<Landing />} />
-          <Route path="/auth" element={<Auth />} />
-          <Route path="/cockpit/*" element={<DemoGate><Cockpit /></DemoGate>} />
-          <Route path="/asha/*" element={<DemoGate><AshaApp /></DemoGate>} />
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </BrowserRouter>
-    </QueryClientProvider>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter>
+          <Toaster position="top-center" richColors />
+          <Routes>
+            <Route path="/" element={<Landing />} />
+            <Route path="/auth" element={<Auth />} />
+            <Route path="/cockpit/*" element={<DemoGate><Cockpit /></DemoGate>} />
+            <Route path="/asha/*" element={<DemoGate><AshaApp /></DemoGate>} />
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </BrowserRouter>
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 }
