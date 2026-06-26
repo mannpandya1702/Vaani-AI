@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import Vapi from '@vapi-ai/web';
-import { Mic, PhoneOff, Languages, CircleStop, Phone } from 'lucide-react';
+import * as Dialog from '@radix-ui/react-dialog';
+import { Mic, PhoneOff, Languages, CircleStop, Phone, Shield, CheckCircle2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+
+const ACK_STORAGE_KEY = 'vaani_demo_acknowledged_v1';
 
 type Lang = 'hi' | 'ta';
 type CallState = 'idle' | 'connecting' | 'in-call' | 'ending' | 'ended';
@@ -27,6 +30,16 @@ export default function AshaApp() {
   const [turns, setTurns] = useState<TranscriptTurn[]>([]);
   const [speechLevel, setSpeechLevel] = useState(0);
   const [callId, setCallId] = useState<string | null>(null);
+  // Slide-1 disclosure acknowledgment — Anand-mandated, NMC Act 2019 +
+  // IMC Reg 6.1.1. Mic button is disabled until all three checkboxes are
+  // ticked and the modal is closed. Stored in localStorage so a refresh
+  // doesn't re-prompt; the schema-versioned key (`_v1`) lets us re-prompt
+  // when the verbatim text changes.
+  const [acknowledged, setAcknowledged] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    try { return !!JSON.parse(localStorage.getItem(ACK_STORAGE_KEY) ?? 'null'); }
+    catch { return false; }
+  });
   const vapiRef = useRef<Vapi | null>(null);
 
   useEffect(() => {
@@ -119,6 +132,10 @@ export default function AshaApp() {
       toast.error('No assistant configured for ' + lang);
       return;
     }
+    if (!acknowledged) {
+      toast.error('Please acknowledge the demo disclosure before starting a call.');
+      return;
+    }
     // Release MicCheck's getUserMedia BEFORE Daily.co grabs the mic. Two
     // concurrent consumers on the same default device silently yields an
     // empty track to the second caller on Chrome/Windows + USB headsets.
@@ -173,11 +190,20 @@ export default function AshaApp() {
             <button
               type="button"
               onClick={start}
-              className="mt-6 w-44 h-44 rounded-full bg-vaani-saffron text-vaani-navy shadow-xl flex items-center justify-center hover:scale-105 transition-transform active:scale-95"
+              disabled={!acknowledged}
+              className={cn(
+                'mt-6 w-44 h-44 rounded-full bg-vaani-saffron text-vaani-navy shadow-xl flex items-center justify-center transition-transform',
+                acknowledged ? 'hover:scale-105 active:scale-95' : 'opacity-50 cursor-not-allowed',
+              )}
               aria-label="Start a new call"
             >
               <Mic className="w-16 h-16" />
             </button>
+            {!acknowledged && (
+              <p className="mt-3 text-xs text-amber-700 dark:text-amber-300">
+                Acknowledge the demo disclosure below to enable the call.
+              </p>
+            )}
 
             <p className="mt-8 text-lg font-medium" lang={lang}>
               {lang === 'hi' ? 'नई कॉल शुरू करें' : 'புதிய அழைப்பைத் தொடங்கவும்'}
@@ -248,9 +274,142 @@ export default function AshaApp() {
       </main>
 
       <footer className="text-[11px] text-muted-foreground p-3 text-center border-t">
-        Vaani-AI · AI-assisted health screening · Decisions reviewed by the named RMP.
+        Vaani-AI · AI-assisted health screening · Research prototype · Cockpit RMP independently reviews + signs.
       </footer>
+
+      <DisclosureModal
+        open={!acknowledged}
+        onAcknowledge={() => {
+          const payload = { acknowledged_at: new Date().toISOString(), schema: 'v1' };
+          try { localStorage.setItem(ACK_STORAGE_KEY, JSON.stringify(payload)); } catch {/* private mode */}
+          setAcknowledged(true);
+        }}
+      />
     </div>
+  );
+}
+
+/**
+ * Slide-1 / Anand-mandated disclosure modal. Non-dismissible (no X, no
+ * Escape-to-close), three checkboxes that must ALL be ticked, and a
+ * primary "Begin" CTA that's disabled until they are. Verbatim text is
+ * in docs/legal-verbatim.md — DO NOT paraphrase here without updating
+ * that source-of-truth and getting Anand to sign.
+ *
+ * Acknowledgment is persisted to localStorage under a versioned key
+ * (ACK_STORAGE_KEY) so a tab refresh doesn't re-prompt the volunteer
+ * mid-shoot, but a copy change bumps the version and re-prompts.
+ */
+function DisclosureModal({ open, onAcknowledge }: { open: boolean; onAcknowledge: () => void }) {
+  const [c1, setC1] = useState(false);
+  const [c2, setC2] = useState(false);
+  const [c3, setC3] = useState(false);
+  const allChecked = c1 && c2 && c3;
+
+  return (
+    <Dialog.Root open={open} modal>
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[80]" />
+        <Dialog.Content
+          // Non-dismissible: block escape + outside-click
+          onEscapeKeyDown={(e) => e.preventDefault()}
+          onPointerDownOutside={(e) => e.preventDefault()}
+          onInteractOutside={(e) => e.preventDefault()}
+          className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[90] w-[95vw] max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl border bg-card shadow-2xl"
+        >
+          <div className="sticky top-0 bg-card/95 backdrop-blur border-b px-5 py-3 flex items-center gap-3">
+            <Shield className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+            <div className="flex-1">
+              <Dialog.Title className="text-lg font-semibold leading-tight">Before you begin</Dialog.Title>
+              <Dialog.Description className="text-xs text-muted-foreground">
+                Anand-mandated demo disclosure · NMC Act 2019 · IMC Reg 6.1.1
+              </Dialog.Description>
+            </div>
+            <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider rounded-md border border-amber-500/70 bg-amber-500/10 text-amber-700 dark:text-amber-300 px-2 py-1">
+              AI · DEMO MODE
+            </span>
+          </div>
+
+          <div className="p-5 space-y-4 text-sm leading-relaxed">
+            <p>
+              Vaani-AI is a <b>research prototype</b> demonstrating AI-assisted clinical decision support. No medical
+              consultation, diagnosis, prescription, or treatment is being rendered in this demonstration. All callers
+              are consented adult volunteers; no doctor–patient relationship is created. <b>"Vaani" is an AI voice
+              screener — not a registered medical practitioner.</b> The doctor at the cockpit is a real, named,
+              SMC-verified, HPR-linked Registered Medical Practitioner who independently reviews and signs every
+              clinical note.
+            </p>
+
+            <p lang="hi" className="font-hind text-base">
+              वाणी-AI एक रिसर्च प्रोटोटाइप है — सिर्फ़ AI सहायता का प्रदर्शन है। आज इस मंच पर कोई इलाज, निदान, पर्चा या दवा
+              नहीं दी जा रही। सभी कॉलर सहमति देने वाले वयस्क स्वयंसेवक हैं; किसी डॉक्टर-मरीज़ रिश्ते की कोई बात नहीं।
+              <b> 'वाणी' एक AI सहायक है, डॉक्टर नहीं।</b> कॉकपिट पर बैठे डॉक्टर साहब वास्तविक हैं — SMC-प्रमाणित, HPR-ABDM
+              से जुड़े — हर रिपोर्ट वो ख़ुद देखकर सिग्नेचर करते हैं।
+            </p>
+
+            <div className="rounded-lg border bg-muted/40 p-4 space-y-3">
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={c1}
+                  onChange={(e) => setC1(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 accent-vaani-saffron"
+                />
+                <span>I understand Vaani is an AI, NOT a doctor, and this demonstration provides no medical care.</span>
+              </label>
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={c2}
+                  onChange={(e) => setC2(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 accent-vaani-saffron"
+                />
+                <span>I am an adult (18+) consented volunteer or am consenting on behalf of an adult volunteer present.</span>
+              </label>
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={c3}
+                  onChange={(e) => setC3(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 accent-vaani-saffron"
+                />
+                <span>
+                  I have read and signed the volunteer consent form (
+                  <a href="/docs/legal/volunteer-consent-v3.md" target="_blank" rel="noreferrer" className="underline">v3</a>
+                  ) before this session.
+                </span>
+              </label>
+            </div>
+
+            <p className="text-xs text-muted-foreground">
+              Saying <b>"रोको"</b> (Hindi) or <b>"stop"</b> any time ends the call and erases the recording. The
+              recording exists only to be reviewed by the named RMP; it is not used for AI training.
+            </p>
+          </div>
+
+          <div className="sticky bottom-0 bg-card/95 backdrop-blur border-t px-5 py-3 flex items-center gap-3">
+            <div className="flex-1 text-xs text-muted-foreground">
+              {allChecked
+                ? <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400"><CheckCircle2 className="w-3.5 h-3.5" /> All three acknowledged</span>
+                : <>Tick all three to enable the call.</>}
+            </div>
+            <button
+              type="button"
+              onClick={onAcknowledge}
+              disabled={!allChecked}
+              className={cn(
+                'text-sm px-5 py-2 rounded-md font-semibold transition',
+                allChecked
+                  ? 'bg-vaani-saffron text-vaani-navy hover:opacity-90'
+                  : 'bg-muted text-muted-foreground cursor-not-allowed',
+              )}
+            >
+              I understand · Begin
+            </button>
+          </div>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
   );
 }
 
