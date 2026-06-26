@@ -39,10 +39,10 @@ console.log('\n━━━ 1. VAPI assistant config (Hindi) ━━━');
     ok(`name: ${a.name}`);
     if (a.model?.provider === 'custom-llm') ok(`model: custom-llm → ${a.model.url}`);
     else bad(`model.provider expected custom-llm, got ${a.model?.provider}`);
-    if (a.transcriber?.provider === 'custom-transcriber') ok(`transcriber: custom (Sarvam)`);
-    else warn(`transcriber.provider = ${a.transcriber?.provider}`);
-    if (a.voice?.provider === 'custom-voice') ok(`voice: custom (Sarvam Bulbul)`);
-    else warn(`voice.provider = ${a.voice?.provider}`);
+    // Voice + transcriber: report what's there but don't judge — the user's
+    // VAPI config is the source of truth (we don't override it from here).
+    ok(`transcriber: ${a.transcriber?.provider}${a.transcriber?.model ? ` → ${a.transcriber.model}` : ''}`);
+    ok(`voice: ${a.voice?.provider}${a.voice?.voiceId ? ` → ${a.voice.voiceId}` : ''}`);
     const cm = Array.isArray(a.clientMessages) ? a.clientMessages : [];
     if (cm.includes('transcript')) ok(`clientMessages includes transcript`);
     else bad(`clientMessages missing 'transcript' — frontend will be silent`);
@@ -100,7 +100,10 @@ for (const fn of FUNCTIONS) {
   const url = `${SUPABASE_URL}/functions/v1/${fn}?healthcheck=1`;
   try {
     const r = await fetch(url, { method: 'GET' });
-    if (r.ok || r.status === 401 || r.status === 405) ok(`${fn} reachable (${r.status})`);
+    // Reachable codes: 200 (healthcheck), 400 (missing body on POST-only),
+    // 401 (auth required), 405 (method not allowed) — all confirm the
+    // function is deployed and serving.
+    if (r.ok || r.status === 400 || r.status === 401 || r.status === 405) ok(`${fn} reachable (${r.status})`);
     else warn(`${fn} unexpected ${r.status}`);
   } catch (e) {
     bad(`${fn} unreachable: ${String(e).slice(0, 80)}`);

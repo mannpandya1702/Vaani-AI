@@ -3,63 +3,65 @@
 Use this to test the full inbound PSTN loop with your VAPI number TODAY,
 so Jul 11 in-person is just a re-run of something that already worked.
 
-## 1. One-time setup (10 minutes)
+## Status (2026-06-26 — wired by Claude this session)
 
-### a. VAPI dashboard — bind the number to the Hindi assistant
-1. https://dashboard.vapi.ai/phone-numbers → click your new number
-2. **Inbound Settings**:
-   - Assistant: **Vaani (Hindi)** — id `466283fd-a6ed-4652-a960-e486009a85a8`
-   - Server URL: `https://kjhpmoqybqnjpqfqitqr.supabase.co/functions/v1/vapi-webhook`
-   - Server Secret: paste the value of `VAPI_WEBHOOK_SECRET` from `.env.local`
-3. Save
+| Layer | State |
+|-------|-------|
+| VAPI number `+15138227440` | ✅ Bought (US area code 513 / Cincinnati) |
+| Bound to Hindi assistant `466283fd-a6ed-4652-a960-e486009a85a8` | ✅ Done via VAPI API |
+| Webhook server URL | ✅ `https://kjhpmoqybqnjpqfqitqr.supabase.co/functions/v1/vapi-webhook` |
+| Webhook server secret | ✅ Synced with `VAPI_WEBHOOK_SECRET` from `.env.local` |
+| Assistant model | ✅ custom-llm → `vapi-custom-llm` proxy (PII redaction + Claude prompt cache) |
+| Assistant transcriber | Deepgram `flux-general-multi` (your config, not changed) |
+| Assistant voice | ElevenLabs `DpnM70iDHNHZ0Mguv6GJ` (your config, not changed) |
+| `clientMessages` | ✅ Includes `transcript`, `tool-calls`, `status-update` |
+| `serverMessages` | ✅ Includes `end-of-call-report`, `transcript`, `status-update` |
+| Supabase secret `AGENT_PHONE_E164` | ✅ Set on `kjhpmoqybqnjpqfqitqr` |
+| Edge functions (9 of them) | ✅ All reachable from preflight |
+| Container `.env.local` | ✅ Agent number vars appended |
 
-### b. Local env (`.env.local`)
+Re-run anytime: `npm run preflight`
+
+## Action items on YOUR machine
+
+### 1. Mirror the agent-number vars to your Windows `.env.local`
+
+Open `.env.local` in your local repo, append at the bottom:
+
 ```bash
 VAPI_TEST_PHONE_NUMBER=+15138227440
 AGENT_PHONE_E164=+15138227440
-VITE_AGENT_PHONE_DISPLAY=+1 513-822-7440
+VITE_AGENT_PHONE_DISPLAY="+1 513-822-7440"
 ```
+
+Quotes around `VITE_AGENT_PHONE_DISPLAY` matter — the space inside the
+value breaks bash/PowerShell sourcing without them.
+
 Restart `npm run dev` (env requires restart, not just hot-reload).
 
-### c. Supabase secrets (for `vaani-signoff` running in prod)
-```bash
-supabase secrets set AGENT_PHONE_E164=+1XXXXXXXXXX \
-  --project-ref kjhpmoqybqnjpqfqitqr
-```
+### 2. (Only if frontend is deployed to Vercel)
 
-### d. Vercel env (if frontend is deployed)
-Add `VITE_AGENT_PHONE_DISPLAY` in Vercel Dashboard → Settings → Environment Variables → Production. Redeploy.
+Vercel Dashboard → Project Settings → Environment Variables → Production:
+- `VITE_AGENT_PHONE_DISPLAY` = `+1 513-822-7440`
 
-## 2. Pre-flight check
+Redeploy.
 
-```bash
-npm run preflight
-```
-
-This runs `eval/pstn-ready.ts` which verifies:
-- Hindi assistant has custom-llm / custom-transcriber / custom-voice configured
-- `clientMessages` includes `transcript` (else frontend goes silent)
-- VAPI phone number is bound to the Hindi assistant
-- Server URL points at `vapi-webhook`
-- All 9 edge functions reachable
-- Env vars set on the box you're running this from
-
-Green = ready to dial. Any red = fix it first.
-
-## 3. The actual test (5 minutes)
+## The actual test (5 minutes)
 
 ### Tab A — open the cockpit
-Sign in as the RMP (run `eval/promote-rmp.ts you@example.com rmp` once if you haven't). Open `/cockpit` in a browser. Leave it visible.
+Sign in as the RMP (if you haven't been promoted yet, run
+`deno run --allow-env --allow-net eval/promote-rmp.ts you@example.com rmp`
+once). Open `/cockpit`. Leave visible.
 
 ### Tab B — VAPI dashboard logs
 https://dashboard.vapi.ai/calls — leave open. You'll see your call appear here in real time.
 
 ### Step 1 — dial
-Call the VAPI number from your phone.
+Call `+1 513-822-7440` from your phone.
 
 **Expected:**
 - Ring picks up in ~2s
-- Vaani greets in Hindi: *"नमस्ते, मैं वाणी हूँ — आज मैं आपकी कैसे मदद कर सकती हूँ?"*
+- Vaani greets in Hindi: *"नमस्ते जी, मैं वाणी हूँ, डॉक्टर साहब की क्लिनिक से…"* (full first-message)
 
 ### Step 2 — converse
 Speak a complaint: *"सीने में दर्द है, साँस लेने में दिक्कत है"* (chest pain + breathing difficulty — should trigger RED).
@@ -82,35 +84,28 @@ Within ~10s of hangup:
 Click the card → SoapReviewDialog opens.
 
 **Expected:**
-- Subjective / Objective / Assessment / Plan fields auto-populated by Claude Sonnet 4.6
+- Subjective / Objective / Assessment / Plan auto-populated by Claude Sonnet 4.6
 - Drug suggestions (if any) live in the amber **MO-only** panel, NOT in Plan
 - Edit Plan if needed → **Approve & Sign**
 
 ### Step 5 — soul callback
-After signing, the toast bottom-right says *"डॉक्टर साहब ने देख लिया है — playing now"*. Audio plays in-cockpit (Sarvam Bulbul v3, ~6s).
+After signing, toast says *"डॉक्टर साहब ने देख लिया है — playing now"*. Audio plays in-cockpit (Sarvam Bulbul v3, ~6s).
 
 **Expected:**
 - Audio is Vaani's voice reading the Plan field verbatim, opened with *"नमस्ते। डॉक्टर साहब ने आपकी रिपोर्ट देख ली है। उनकी सलाह सुनिए — "* and closed with *"आराम कीजिए, हम आपके साथ हैं।"*
 
-If any of those expectations fail: open the VAPI Calls log in Tab B + the
-Supabase function logs at https://supabase.com/dashboard/project/kjhpmoqybqnjpqfqitqr/functions/vapi-webhook/logs
+If any expectation fails: open VAPI Calls log in Tab B + Supabase
+function logs at
+https://supabase.com/dashboard/project/kjhpmoqybqnjpqfqitqr/functions/vapi-webhook/logs
 and find the row corresponding to your call.
 
-## 4. Known gaps (don't fix tonight)
+## Known gaps (don't fix tonight)
 
-- **Outbound PSTN dial-out for the soul callback isn't wired.** The
-  audio plays in-cockpit only. Production needs `call-dispatcher` edge
-  function → Exotel SIP. Doesn't matter for Jul 11 — voice-over the
-  demo as "in production, this dials the patient's phone via Exotel."
-- **VAPI US area code on the inbound number.** Slide 8 should say
-  Exotel `+91 95138-86363` (your real provisioned number) as the
-  production line; VAPI US is "sandbox dev environment."
-- **`vapi-webhook` resolves PSTN dialler by `customer.number`** — if
-  you dial from an Indian phone, the patient row's `phone_e164` will
-  be your real number. For the recorded demo, dial from a phone you
-  control or use a +1 throwaway.
+- **Outbound PSTN dial-out for the soul callback isn't wired.** Audio plays in-cockpit only. Production needs `call-dispatcher` edge function → Exotel SIP. Doesn't matter for Jul 11 — voice-over the demo as *"in production, this dials the patient's phone via Exotel."*
+- **VAPI US area code on the inbound number.** Slide 8 should say Exotel `+91 95138-86363` (your real provisioned Indian number) as the production line; VAPI US is "sandbox dev environment."
+- **`vapi-webhook` resolves PSTN dialler by `customer.number`** — if you dial from an Indian phone, the patient row's `phone_e164` will be your real number. For the recorded demo, dial from a phone you control or use a +1 throwaway.
 
-## 5. After the test passes
+## After the test passes
 
 Tag this commit so you can revert if anything breaks:
 ```bash
