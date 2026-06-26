@@ -102,9 +102,18 @@ Deno.serve(async (req) => {
     const phrase = normalize(row.phrase);
     const match = matchPhrase(transcript, phrase, row.detection_method);
     if (!match.hit || isNegated(transcript, match.idx)) continue;
-    // Qualifier gate (migration 008)
+    // Qualifier gate (migration 008) — audit-§3 fix: bound the qualifier
+    // search to a ±200-char window around the matched phrase instead of
+    // the entire transcript. Without this, an earlier turn's qualifier
+    // mention triggers a later turn's RED even if the qualifying context
+    // is long gone.
     const requires: string[] = Array.isArray(row.requires_qualifier) ? row.requires_qualifier : [];
-    if (requires.length > 0 && !qualifierPresent(transcript, requires)) continue;
+    if (requires.length > 0) {
+      const phraseStart = Math.max(0, match.idx - 200);
+      const phraseEnd = Math.min(transcript.length, match.idx + phrase.length + 200);
+      const window = transcript.slice(phraseStart, phraseEnd);
+      if (!qualifierPresent(window, requires)) continue;
+    }
     const key = `${row.category}:${row.phrase}`;
     if (seen.has(key)) continue;
     seen.add(key);

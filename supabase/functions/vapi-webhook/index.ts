@@ -42,11 +42,16 @@ Deno.serve(async (req) => {
   try { parsed = rawBody ? JSON.parse(rawBody) : null; }
   catch (e) { errorMsg = errorMsg ?? `json_parse_failed: ${(e as Error).message}`; }
 
-  // 1. Log raw payload always
+  // 1. Log payload (PII-redacted) always. Audit-§3 fix: previously this
+  //    persisted raw caller transcripts straight into dispatch_webhook_logs
+  //    which violated DPDP s.16 / Anand §3.9 — logs leaked PII to anyone
+  //    with read access on the audit table.
+  const safeBody = redactWebhookBody(rawBody);
+  const safeParsed = parsed ? redactParsedBody(parsed) : null;
   await sb.from('dispatch_webhook_logs').insert({
     source: 'vapi',
-    raw_body: rawBody.slice(0, 64_000),
-    parsed_body: parsed,
+    raw_body: safeBody.slice(0, 64_000),
+    parsed_body: safeParsed,
     headers: Object.fromEntries(req.headers),
     signature_valid: signatureValid,
     http_status: httpStatus,
@@ -75,11 +80,28 @@ Deno.serve(async (req) => {
   });
 
   switch (eventType) {
-    case 'status-update':
     case 'call.started':
       // @ts-expect-error edge runtime
       EdgeRuntime?.waitUntil?.(handleCallStarted(callId, vapiCall, message));
       return respond();
+
+    case 'status-update': {
+      // Audit-§3 fix (aman): the previous code piped status-update through
+      // handleCallStarted, which upserts outcome='in_progress'. When that
+      // ran AFTER end-of-call-report had already set outcome='completed',
+      // the upsert clobbered the completed state back to in_progress.
+      // Status-update now only matters for explicit lifecycle transitions
+      // (status='ended' is handled by end-of-call-report; everything else
+      // is informational — no DB write).
+      const status: string | undefined = message?.status;
+      if (status === 'in-progress') {
+        // Only act on in-progress if this is the FIRST mention of the call.
+        // @ts-expect-error edge runtime
+        EdgeRuntime?.waitUntil?.(handleCallStartedIfMissing(callId, vapiCall));
+      }
+      // Other statuses ignored — end-of-call-report owns the terminal transition.
+      return respond();
+    }
 
     case 'end-of-call-report':
       // @ts-expect-error edge runtime
@@ -101,6 +123,21 @@ Deno.serve(async (req) => {
       return respond();
   }
 });
+
+// Idempotent wrapper around handleCallStarted — only runs if the call
+// row doesn't already exist. Audit-§3 fix: prevents status-update events
+// arriving AFTER end-of-call-report from clobbering outcome='completed'
+// back to 'in_progress'.
+async function handleCallStartedIfMissing(callId: string, vapiCall: any) {
+  const sb = supabaseAdmin();
+  const { data: existing } = await sb.from('calls')
+    .select('id, outcome').eq('vapi_call_id', callId).maybeSingle();
+  if (existing) {
+    // Already inserted — never re-upsert from a status-update.
+    return;
+  }
+  return handleCallStarted(callId, vapiCall, {});
+}
 
 async function handleCallStarted(callId: string | undefined, vapiCall: any, _message: any) {
   if (!callId) return;
@@ -163,7 +200,12 @@ async function handleEndOfCall(
   if (!callId) return;
   const sb = supabaseAdmin();
 
-  // ── EOC idempotency claim (Aman §10) ──────────────────────────
+  // ── EOC idempotency CHECK (Aman §10 + audit §3 ordering fix) ──
+  // The previous order wrote the idempotency row BEFORE the conditional
+  // update. Any failure mid-handler permanently poisoned retries — the
+  // next delivery would see the key, return, and the call would stay
+  // in_progress forever. Fixed by deferring the key insert until AFTER
+  // the claim succeeds.
   const idempotencyKey = await sha256Hex(`vapi:eoc:${callId}:${rawBody.length}`);
   const { data: dupCheck } = await sb.from('dispatch_idempotency_keys')
     .select('idempotency_key')
@@ -172,9 +214,6 @@ async function handleEndOfCall(
     console.log('[vapi-webhook] duplicate EOC ignored', callId);
     return;
   }
-  await sb.from('dispatch_idempotency_keys').insert({
-    source: 'vapi', idempotency_key: idempotencyKey, resolution: 'processed',
-  });
 
   // Cost breakdown from VAPI report
   const costs = message.costs ?? [];
@@ -207,6 +246,13 @@ async function handleEndOfCall(
     console.log('[vapi-webhook] EOC claim missed — already processed');
     return;
   }
+
+  // Claim succeeded — NOW persist the idempotency row. Order matters per
+  // audit-§3: writing the key before the claim poisoned retries on any
+  // mid-handler failure.
+  await sb.from('dispatch_idempotency_keys').insert({
+    source: 'vapi', idempotency_key: idempotencyKey, resolution: 'processed',
+  });
 
   // Dispatch to process-call-records (best-effort)
   const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
@@ -286,4 +332,40 @@ async function sha256Hex(text: string): Promise<string> {
   const data = new TextEncoder().encode(text);
   const hash = await crypto.subtle.digest('SHA-256', data);
   return Array.from(new Uint8Array(hash)).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+// ─────────────────────────────────────────────────────────────
+// PII-stripping helpers for dispatch_webhook_logs persistence.
+// Audit-§3 (devansh): the previous code stored raw caller transcripts
+// in dispatch_webhook_logs — a long-retention audit table — which is
+// a DPDP s.16 / Anand §3.9 violation by itself even before anything
+// gets sent abroad. These keep the structural metadata for ops debug
+// (event type, call id, signature_valid, http_status, timestamps,
+// cost breakdown) but drop the actual conversation text.
+
+function redactWebhookBody(raw: string): string {
+  // Best-effort regex strip — replace any "transcript":"..." / "message":"..."
+  // / "content":"..." / "summary":"..." with a placeholder.
+  // Conservative: catches the long string content fields VAPI emits.
+  return raw.replace(
+    /("(?:transcript|message|content|summary|userMessage|assistantMessage)"\s*:\s*)"([^"]*)"/g,
+    (_m, key) => `${key}"[redacted]"`,
+  );
+}
+
+function redactParsedBody(parsed: any): any {
+  if (parsed === null || parsed === undefined) return parsed;
+  if (Array.isArray(parsed)) return parsed.map(redactParsedBody);
+  if (typeof parsed === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(parsed)) {
+      if (['transcript', 'message', 'content', 'summary', 'userMessage', 'assistantMessage'].includes(k) && typeof v === 'string') {
+        out[k] = '[redacted]';
+      } else {
+        out[k] = redactParsedBody(v);
+      }
+    }
+    return out;
+  }
+  return parsed;
 }
