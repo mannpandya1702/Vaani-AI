@@ -25,7 +25,15 @@ export default function AshaApp() {
 
   useEffect(() => {
     if (!PUBLIC_KEY) return;
-    const vapi = new Vapi(PUBLIC_KEY);
+    // alwaysIncludeMicInPermissionPrompt: forces VAPI to always re-request mic
+    //   permission (helps if Daily.co cached a denied state silently).
+    // startAudioOff: false: ensure the local mic track is published from t=0.
+    const vapi = new Vapi(
+      PUBLIC_KEY,
+      undefined,
+      { alwaysIncludeMicInPermissionPrompt: true } as any,
+      { startAudioOff: false } as any,
+    );
     vapiRef.current = vapi;
 
     vapi.on('call-start', () => setState('in-call'));
@@ -33,6 +41,24 @@ export default function AshaApp() {
     vapi.on('speech-start', () => setSpeechLevel(1));
     vapi.on('speech-end', () => setSpeechLevel(0));
     vapi.on('volume-level', (lvl: number) => setSpeechLevel(lvl));
+    // Stage-by-stage progress for the start sequence — surfaces auth/daily/
+    // media/ICE failures with the exact stage name. Without these we only
+    // saw a generic "error: unknown" and had no idea what part of VAPI's
+    // pipeline broke.
+    vapi.on('call-start-progress' as any, (ev: any) => {
+      console.log('[vapi.start-progress]', ev?.stage, ev?.status, ev);
+    });
+    vapi.on('call-start-failed' as any, (ev: any) => {
+      console.error('[vapi.start-failed]', ev);
+      toast.error(`Start failed at ${ev?.stage ?? '?'}: ${ev?.error ?? 'unknown'}`);
+      setState('idle');
+    });
+    vapi.on('network-quality-change' as any, (ev: any) => {
+      console.log('[vapi.netq]', ev);
+    });
+    vapi.on('network-connection' as any, (ev: any) => {
+      console.log('[vapi.netconn]', ev);
+    });
     vapi.on('message', (msg: any) => {
       // VAPI emits both partial (deltas) and final transcripts.
       if (msg?.type === 'transcript') {
@@ -223,9 +249,29 @@ function MicCheck() {
   const [level, setLevel] = useState(0);
   const [peak, setPeak] = useState(0);
   const [device, setDevice] = useState<string>('');
+  const [netTest, setNetTest] = useState<'idle' | 'running' | 'ok' | 'bad'>('idle');
+  const [netDetail, setNetDetail] = useState<string>('');
   const streamRef = useRef<MediaStream | null>(null);
   const acRef = useRef<AudioContext | null>(null);
   const rafRef = useRef<number | null>(null);
+
+  async function runVapiNetTest() {
+    setNetTest('running');
+    setNetDetail('');
+    try {
+      const results = await (Vapi as any).runNetworkTestsStandalone();
+      console.log('[vapi.netTest]', results);
+      const turn = results?.networkConnectivity?.result;
+      const ws = results?.websocketConnectivity?.result;
+      const ok = (!turn || turn === 'passed') && (!ws || ws === 'passed');
+      setNetTest(ok ? 'ok' : 'bad');
+      setNetDetail(`TURN: ${turn ?? 'n/a'} · WS: ${ws ?? 'n/a'}`);
+    } catch (e: any) {
+      console.error('[vapi.netTest] failed', e);
+      setNetTest('bad');
+      setNetDetail(String(e?.message ?? e).slice(0, 120));
+    }
+  }
 
   async function start() {
     try {
@@ -341,6 +387,23 @@ function MicCheck() {
           No microphone is connected. Plug one in and reload.
         </div>
       )}
+
+      <div className="mt-3 pt-3 border-t flex items-center gap-2 text-xs">
+        <button
+          onClick={runVapiNetTest}
+          disabled={netTest === 'running'}
+          className="rounded-md border bg-secondary/60 hover:bg-secondary px-2 py-1 disabled:opacity-60"
+        >
+          {netTest === 'running' ? 'Testing…' : 'Test VAPI network'}
+        </button>
+        {netTest === 'ok' && (
+          <span className="text-emerald-600 dark:text-emerald-400">✓ VAPI reachable</span>
+        )}
+        {netTest === 'bad' && (
+          <span className="text-red-600 dark:text-red-400">✗ blocked</span>
+        )}
+        {netDetail && <span className="text-muted-foreground truncate">{netDetail}</span>}
+      </div>
     </div>
   );
 }
