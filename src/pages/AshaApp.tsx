@@ -62,7 +62,7 @@ export default function AshaApp() {
     vapiRef.current = vapi;
 
     vapi.on('call-start', () => setState('in-call'));
-    vapi.on('call-end', (ev: any) => {
+    vapi.on('call-end', (ev?: any) => {
       // VAPI's ended-reason: 'silence-timed-out', 'customer-ended-call',
       // 'assistant-ended-call', 'pipeline-error-*'.
       const reason = String(ev?.endedReason ?? ev?.reason ?? '').toLowerCase();

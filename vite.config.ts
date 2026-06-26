@@ -10,7 +10,11 @@ import path from 'node:path';
 // On first load the browser will show a self-signed-cert warning —
 // click "Advanced → Proceed". The cert is regenerated each cold start.
 export default defineConfig({
-  server: { host: true, port: 8080, https: true, strictPort: false },
+  // NOTE: do NOT add `https: true` here — Vite 5's type for server.https is
+  // `https.ServerOptions | undefined`, not boolean (build breaks with TS2769).
+  // The basicSsl() plugin below enables HTTPS + injects the self-signed cert
+  // on its own, so the dev server is still https://localhost:8080.
+  server: { host: true, port: 8080, strictPort: false },
   plugins: [react(), basicSsl()],
   resolve: {
     alias: { '@': path.resolve(__dirname, './src') },

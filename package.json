@@ -11,7 +11,7 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc -b",
     "db:diff": "supabase db diff --schema public",
     "db:push": "supabase db push",
     "db:reset": "supabase db reset",
