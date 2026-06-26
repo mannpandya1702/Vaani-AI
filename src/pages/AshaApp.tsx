@@ -4,6 +4,7 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { Mic, PhoneOff, Languages, CircleStop, Phone, Shield, CheckCircle2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
 
 const ACK_STORAGE_KEY = 'vaani_demo_acknowledged_v1';
@@ -163,9 +164,16 @@ export default function AshaApp() {
       return;
     }
     if (!acknowledged) {
-      toast.error('Please acknowledge the demo disclosure before starting a call.');
+      toast.error('Please acknowledge the pilot disclosure before starting a call.');
       return;
     }
+    // If the user signed in via phone OTP, forward their phone to VAPI as
+    // assistant metadata so handleCallStarted can attach the calls row to
+    // a real patient record (keyed by phone_e164) instead of an anonymous
+    // placeholder. Falls back to the email if only that's available.
+    const { data: { user } } = await supabase.auth.getUser();
+    const callerPhone = (user?.phone && user.phone.startsWith('+')) ? user.phone : undefined;
+    const callerEmail = user?.email ?? undefined;
     // Release MicCheck's getUserMedia BEFORE Daily.co grabs the mic. Two
     // concurrent consumers on the same default device silently yields an
     // empty track to the second caller on Chrome/Windows + USB headsets.
@@ -181,7 +189,20 @@ export default function AshaApp() {
     setCallId(null);
     setState('connecting');
     try {
-      await vapiRef.current.start(ASSISTANT_BY_LANG[lang]);
+      // Pass the authenticated caller's identity as VAPI assistantOverrides
+      // metadata. vapi-webhook reads message.call.assistantOverrides.metadata
+      // in handleCallStarted to attach a real patient row.
+      await vapiRef.current.start(
+        ASSISTANT_BY_LANG[lang],
+        {
+          metadata: {
+            caller_phone_e164: callerPhone,
+            caller_email: callerEmail,
+            caller_lang: lang,
+            client: 'asha-web',
+          },
+        } as any,
+      );
     } catch (e: any) {
       console.error(e);
       toast.error('Could not start call: ' + (e?.message ?? e));

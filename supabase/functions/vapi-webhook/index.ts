@@ -145,7 +145,19 @@ async function handleCallStarted(callId: string | undefined, vapiCall: any, _mes
   if (!callId) return;
   const sb = supabaseAdmin();
 
-  const phone = vapiCall.customer?.number ?? vapiCall.phoneNumber?.number;
+  // Phone resolution priority:
+  //  1. PSTN customer number (Exotel) — authoritative for phone-channel callers
+  //  2. Auth-signed-in phone passed from the web client via assistantOverrides
+  //     metadata (added 2026-06-26 — phone-numbers.md §1)
+  //  3. Fall back to anonymous placeholder so triage-score's NOT-NULL
+  //     constraint doesn't trip
+  const metadata = vapiCall.assistantOverrides?.metadata ?? {};
+  const phone =
+    vapiCall.customer?.number
+    ?? vapiCall.phoneNumber?.number
+    ?? (metadata.caller_phone_e164 as string | undefined);
+  const callerEmail = (metadata.caller_email as string | undefined) ?? null;
+  const langDeclared = (metadata.caller_lang as string | undefined) ?? 'hi';
   const assistantId = vapiCall.assistantId;
   const orgId = vapiCall.orgId ?? vapiCall.organization?.id;
 
@@ -165,14 +177,27 @@ async function handleCallStarted(callId: string | undefined, vapiCall: any, _mes
     return;
   }
 
-  // Upsert patient. Webcalls have no customer.number, so for them we
-  // create an anonymous patient row keyed by the VAPI call id (random
-  // placeholder phone). Without this, triage-score fails because the
-  // triage_decisions.patient_id NOT NULL constraint trips. This is
-  // exactly the "I talked via web but no report shows" failure mode.
+  // Upsert patient. Priority chain (see docs/phone-numbers.md §1):
+  //   1. Real phone (PSTN customer.number OR signed-in user.phone metadata)
+  //   2. Email-keyed pseudo-phone for email-magic-link signups:
+  //      "+91-email-<sha8>" (RFC-7807 invalid, harmless, unique per email,
+  //      idempotent across sessions so the same user keeps the same patient).
+  //   3. Random anonymous placeholder for fully anonymous web calls.
+  // Without this, triage-score fails the triage_decisions.patient_id NOT
+  // NULL constraint.
   let patientId: string | null = null;
-  const phoneKey = phone ?? `+91900${randomDigits(8)}`;
-  const fullName = phone ? null : `Web demo caller · ${callId.slice(0, 8)}`;
+  let phoneKey: string;
+  let fullName: string | null = null;
+  if (phone) {
+    phoneKey = phone;
+  } else if (callerEmail) {
+    const emailHash = await sha256Hex(callerEmail);
+    phoneKey = `+91-em-${emailHash.slice(0, 10)}`;
+    fullName = `Pilot caller (${callerEmail.split('@')[0]})`;
+  } else {
+    phoneKey = `+91900${randomDigits(8)}`;
+    fullName = `Anonymous web caller · ${callId.slice(0, 8)}`;
+  }
   {
     const { data: existing } = await sb.from('patients')
       .select('id').eq('phone_e164', phoneKey).eq('tenant_id', tenant.id).maybeSingle();
@@ -182,7 +207,7 @@ async function handleCallStarted(callId: string | undefined, vapiCall: any, _mes
       const { data: created } = await sb.from('patients').insert({
         phone_e164: phoneKey,
         tenant_id: tenant.id,
-        preferred_language: 'hi',
+        preferred_language: langDeclared as any,
         pregnancy_status: 'not_pregnant',
         full_name: fullName,
       }).select('id').single();
@@ -199,7 +224,7 @@ async function handleCallStarted(callId: string | undefined, vapiCall: any, _mes
     channel: phone ? 'voice' : 'web',
     outcome: 'in_progress',
     started_at: vapiCall.startedAt ?? new Date().toISOString(),
-    lang_declared: 'hi',
+    lang_declared: langDeclared,
   }, { onConflict: 'vapi_call_id' });
 }
 
