@@ -79,39 +79,37 @@ Deno.serve(async (req) => {
     status: 200, headers: { ...corsHeaders, 'content-type': 'application/json' },
   });
 
+  // NOTE on awaiting: previously these dispatched via
+  // EdgeRuntime?.waitUntil?.(handler(...)). In practice the Deno worker
+  // sometimes killed the request context before the handler completed —
+  // calls stayed in_progress, no triage_decisions row, empty cockpit.
+  // We now AWAIT inline. The webhook responds a few seconds later but
+  // every event runs to completion. VAPI's server.timeoutSeconds=20s
+  // gives us plenty of headroom. (Audit follow-up — webcall pipeline.)
   switch (eventType) {
     case 'call.started':
-      // @ts-expect-error edge runtime
-      EdgeRuntime?.waitUntil?.(handleCallStarted(callId, vapiCall, message));
+      await handleCallStarted(callId, vapiCall, message).catch((e) =>
+        console.error('[vapi-webhook] handleCallStarted failed', e));
       return respond();
 
     case 'status-update': {
-      // Audit-§3 fix (aman): the previous code piped status-update through
-      // handleCallStarted, which upserts outcome='in_progress'. When that
-      // ran AFTER end-of-call-report had already set outcome='completed',
-      // the upsert clobbered the completed state back to in_progress.
-      // Status-update now only matters for explicit lifecycle transitions
-      // (status='ended' is handled by end-of-call-report; everything else
-      // is informational — no DB write).
       const status: string | undefined = message?.status;
       if (status === 'in-progress') {
-        // Only act on in-progress if this is the FIRST mention of the call.
-        // @ts-expect-error edge runtime
-        EdgeRuntime?.waitUntil?.(handleCallStartedIfMissing(callId, vapiCall));
+        await handleCallStartedIfMissing(callId!, vapiCall).catch((e) =>
+          console.error('[vapi-webhook] handleCallStartedIfMissing failed', e));
       }
-      // Other statuses ignored — end-of-call-report owns the terminal transition.
       return respond();
     }
 
     case 'end-of-call-report':
-      // @ts-expect-error edge runtime
-      EdgeRuntime?.waitUntil?.(handleEndOfCall(callId, vapiCall, message, rawBody));
+      await handleEndOfCall(callId, vapiCall, message, rawBody).catch((e) =>
+        console.error('[vapi-webhook] handleEndOfCall failed', e));
       return respond();
 
     case 'transcript':
     case 'speech-update':
-      // @ts-expect-error edge runtime
-      EdgeRuntime?.waitUntil?.(handleTranscript(callId, message));
+      await handleTranscript(callId, message).catch((e) =>
+        console.error('[vapi-webhook] handleTranscript failed', e));
       return respond();
 
     case 'tool-calls':
@@ -163,16 +161,26 @@ async function handleCallStarted(callId: string | undefined, vapiCall: any, _mes
     return;
   }
 
-  // Upsert patient
+  // Upsert patient. Webcalls have no customer.number, so for them we
+  // create an anonymous patient row keyed by the VAPI call id (random
+  // placeholder phone). Without this, triage-score fails because the
+  // triage_decisions.patient_id NOT NULL constraint trips. This is
+  // exactly the "I talked via web but no report shows" failure mode.
   let patientId: string | null = null;
-  if (phone) {
+  const phoneKey = phone ?? `+91900${randomDigits(8)}`;
+  const fullName = phone ? null : `Web demo caller · ${callId.slice(0, 8)}`;
+  {
     const { data: existing } = await sb.from('patients')
-      .select('id').eq('phone_e164', phone).eq('tenant_id', tenant.id).maybeSingle();
+      .select('id').eq('phone_e164', phoneKey).eq('tenant_id', tenant.id).maybeSingle();
     if (existing) {
       patientId = existing.id;
     } else {
       const { data: created } = await sb.from('patients').insert({
-        phone_e164: phone, tenant_id: tenant.id, preferred_language: 'hi',
+        phone_e164: phoneKey,
+        tenant_id: tenant.id,
+        preferred_language: 'hi',
+        pregnancy_status: 'not_pregnant',
+        full_name: fullName,
       }).select('id').single();
       patientId = created?.id ?? null;
     }
@@ -184,11 +192,17 @@ async function handleCallStarted(callId: string | undefined, vapiCall: any, _mes
     tenant_id: tenant.id,
     patient_id: patientId,
     vapi_assistant_id: assistantId,
-    channel: 'voice',
+    channel: phone ? 'voice' : 'web',
     outcome: 'in_progress',
     started_at: vapiCall.startedAt ?? new Date().toISOString(),
     lang_declared: 'hi',
   }, { onConflict: 'vapi_call_id' });
+}
+
+function randomDigits(n: number): string {
+  let out = '';
+  for (let i = 0; i < n; i++) out += Math.floor(Math.random() * 10).toString();
+  return out;
 }
 
 async function handleEndOfCall(
@@ -254,11 +268,12 @@ async function handleEndOfCall(
     source: 'vapi', idempotency_key: idempotencyKey, resolution: 'processed',
   });
 
-  // Dispatch to process-call-records (best-effort)
+  // Dispatch to process-call-records — AWAIT so the worker context isn't
+  // killed mid-flight by Deno before triage-score / soap-generate run.
   const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
   const MASTER = Deno.env.get('WEBHOOK_MASTER_KEY');
   if (SUPABASE_URL && MASTER) {
-    fetch(`${SUPABASE_URL}/functions/v1/process-call-records`, {
+    await fetch(`${SUPABASE_URL}/functions/v1/process-call-records`, {
       method: 'POST',
       headers: { authorization: `Bearer ${MASTER}`, 'content-type': 'application/json' },
       body: JSON.stringify({
