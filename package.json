@@ -16,7 +16,9 @@
     "db:push": "supabase db push",
     "db:reset": "supabase db reset",
     "fn:deploy": "supabase functions deploy",
-    "fn:serve": "supabase functions serve"
+    "fn:serve": "supabase functions serve",
+    "preflight": "deno run --allow-env --allow-net eval/pstn-ready.ts",
+    "preflight:keys": "deno run --allow-env --allow-net eval/vapi-key-check.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
