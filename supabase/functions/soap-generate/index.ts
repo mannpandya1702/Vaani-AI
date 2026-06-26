@@ -226,8 +226,14 @@ Deno.serve(async (req) => {
       // the column). MO-only — never read by vaani-signoff or any
       // patient-facing surface.
       mo_only_drug_hints: Array.isArray(soap.mo_only_drug_hints) ? soap.mo_only_drug_hints : [],
-      vitals_source: 'NOT_AVAILABLE',
-      vitals_json: {},
+      // Audit §4: persist these too (columns added in migration 010).
+      patient_callback_eta_min: typeof soap.patient_callback_eta_min === 'number'
+        ? soap.patient_callback_eta_min
+        : null,
+      safety_net_text: typeof soap.safety_net === 'string' ? soap.safety_net : null,
+      // Audit §4: vitals_source was hardcoded NOT_AVAILABLE; honor LLM.
+      vitals_source: typeof soap.vitals_source === 'string' ? soap.vitals_source : 'NOT_AVAILABLE',
+      vitals_json: typeof soap.vitals === 'object' && soap.vitals !== null ? soap.vitals : {},
       esanjeevani_payload: soap.esanjeevani_payload ?? null,
       lang,
       original_text: JSON.stringify(soap),

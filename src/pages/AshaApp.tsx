@@ -30,6 +30,11 @@ export default function AshaApp() {
   const [turns, setTurns] = useState<TranscriptTurn[]>([]);
   const [speechLevel, setSpeechLevel] = useState(0);
   const [callId, setCallId] = useState<string | null>(null);
+  // endedReason: differentiates "user-end" (CircleStop OK), "silence-timeout"
+  // (yellow caution), and "error" (red alert). Audit §4 ended-screen item.
+  const [endedReason, setEndedReason] = useState<'user' | 'silence-timeout' | 'error' | null>(null);
+  // Mute toggle for in-call mic — audit §4 missing UX item.
+  const [muted, setMuted] = useState(false);
   // Slide-1 disclosure acknowledgment — Anand-mandated, NMC Act 2019 +
   // IMC Reg 6.1.1. Mic button is disabled until all three checkboxes are
   // ticked and the modal is closed. Stored in localStorage so a refresh
@@ -56,7 +61,15 @@ export default function AshaApp() {
     vapiRef.current = vapi;
 
     vapi.on('call-start', () => setState('in-call'));
-    vapi.on('call-end', () => setState('ended'));
+    vapi.on('call-end', (ev: any) => {
+      // VAPI's ended-reason: 'silence-timed-out', 'customer-ended-call',
+      // 'assistant-ended-call', 'pipeline-error-*'.
+      const reason = String(ev?.endedReason ?? ev?.reason ?? '').toLowerCase();
+      if (reason.includes('silence') || reason.includes('timeout')) setEndedReason('silence-timeout');
+      else if (reason.includes('error') || reason.includes('failed')) setEndedReason('error');
+      else setEndedReason('user');
+      setState('ended');
+    });
     vapi.on('speech-start', () => setSpeechLevel(1));
     vapi.on('speech-end', () => setSpeechLevel(0));
     vapi.on('volume-level', (lvl: number) => setSpeechLevel(lvl));
@@ -121,10 +134,27 @@ export default function AshaApp() {
     });
 
     return () => {
+      // Audit §4: removeAllListeners() to avoid double-binding under
+      // React 18 Strict-Mode's intentional double-mount in dev. Without
+      // this, every dev re-render binds another set of listeners and
+      // events fire 2N times.
+      try { vapi.removeAllListeners(); } catch {/* SDK version w/o the method */}
       vapi.stop();
       vapiRef.current = null;
     };
   }, []);
+
+  // Audit §4: if `state === 'ending'` never transitions because
+  // call-end never fires (network drop, SDK bug), fall back to 'ended'
+  // after 5 seconds so the user isn't stuck.
+  useEffect(() => {
+    if (state !== 'ending') return;
+    const id = window.setTimeout(() => {
+      setState('ended');
+      setEndedReason('error');
+    }, 5000);
+    return () => window.clearTimeout(id);
+  }, [state]);
 
   async function start() {
     if (!vapiRef.current) return;
@@ -215,21 +245,41 @@ export default function AshaApp() {
         )}
 
         {inCall && (
-          <section className="flex-1 flex flex-col">
+          <section className="flex-1 flex flex-col" aria-live="polite" aria-label="Active call">
             <div className="flex items-center gap-3 border-b px-4 py-3 bg-vaani-saffron/10">
               <CallPulse level={speechLevel} active={state === 'in-call'} />
               <div className="flex-1 min-w-0">
                 <div className="font-semibold">
-                  {state === 'connecting' && 'Connecting…'}
+                  {state === 'connecting' && (lang === 'hi' ? 'जुड़ रहे हैं…' : 'Connecting…')}
                   {state === 'in-call' && (lang === 'hi' ? 'Vaani बात कर रही हैं' : 'Vaani பேசுகிறார்')}
-                  {state === 'ending' && 'Wrapping up…'}
+                  {state === 'ending' && (lang === 'hi' ? 'कॉल बंद हो रही है…' : 'Ending…')}
                 </div>
-                <div className="text-xs text-muted-foreground truncate">
-                  Assistant {ASSISTANT_BY_LANG[lang]?.slice(0, 8)}…
+                <div className="text-xs text-muted-foreground truncate" aria-hidden>
+                  {/* Audit §4: assistant UUID was leaking into the header. Show a
+                      friendly name instead. */}
+                  {lang === 'hi' ? 'हिंदी स्क्रीनिंग' : 'தமிழ் திரையிடல்'} · live
                 </div>
               </div>
               <button
+                onClick={() => {
+                  if (!vapiRef.current) return;
+                  const next = !muted;
+                  try { vapiRef.current.setMuted(next); setMuted(next); } catch {/* SDK guard */}
+                }}
+                aria-pressed={muted}
+                aria-label={muted ? 'Unmute microphone' : 'Mute microphone'}
+                title={muted ? 'Unmute' : 'Mute'}
+                className={cn(
+                  'rounded-full px-3 py-2 text-sm font-semibold inline-flex items-center gap-1.5',
+                  muted ? 'bg-amber-500 text-white hover:bg-amber-600' : 'border bg-card hover:bg-secondary/60',
+                )}
+              >
+                {muted ? <PhoneOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+                {muted ? 'Muted' : 'Mute'}
+              </button>
+              <button
                 onClick={stop}
+                aria-label="End call"
                 className="rounded-full bg-red-600 text-white px-4 py-2 text-sm font-semibold inline-flex items-center gap-2 hover:bg-red-700"
               >
                 <PhoneOff className="w-4 h-4" />
@@ -242,29 +292,66 @@ export default function AshaApp() {
         )}
 
         {state === 'ended' && (
-          <section className="flex-1 flex flex-col items-center justify-center p-6 text-center">
-            <motion.div
-              initial={{ scale: 0.85, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              transition={{ type: 'spring', damping: 14 }}
-              className="w-20 h-20 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center justify-center"
-            >
-              <CircleStop className="w-10 h-10" />
-            </motion.div>
-            <h2 className="mt-5 text-lg font-semibold">
-              {lang === 'hi' ? 'कॉल पूरी हुई' : 'அழைப்பு முடிந்தது'}
-            </h2>
-            <p className="text-sm text-muted-foreground mt-1 max-w-xs">
-              {lang === 'hi'
-                ? 'डॉक्टर साहब रिपोर्ट देखेंगे और मरीज़ को फिर से फ़ोन करेंगे।'
-                : 'டாக்டர் அறிக்கையை ஆராய்ந்து மீண்டும் அழைப்பார்.'}
-            </p>
-            {callId && (
-              <code className="mt-3 text-[11px] text-muted-foreground">call: {callId.slice(0, 8)}…</code>
+          <section className="flex-1 flex flex-col items-center justify-center p-6 text-center" aria-live="polite">
+            {endedReason === 'silence-timeout' ? (
+              <>
+                <div className="w-20 h-20 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center">
+                  <Mic className="w-10 h-10" />
+                </div>
+                <h2 className="mt-5 text-lg font-semibold">
+                  {lang === 'hi' ? 'आवाज़ नहीं आई' : 'குரல் கேட்கவில்லை'}
+                </h2>
+                <p className="text-sm text-muted-foreground mt-1 max-w-xs">
+                  {lang === 'hi'
+                    ? 'Vaani को आपकी आवाज़ नहीं सुनाई दी। मरीज़ का माइक चेक कीजिए और दोबारा कोशिश कीजिए।'
+                    : 'மைக் சரியாக இல்லை. மீண்டும் முயற்சி செய்யுங்கள்.'}
+                </p>
+              </>
+            ) : endedReason === 'error' ? (
+              <>
+                <div className="w-20 h-20 rounded-full bg-red-500/15 text-red-600 dark:text-red-400 flex items-center justify-center text-3xl">
+                  !
+                </div>
+                <h2 className="mt-5 text-lg font-semibold">
+                  {lang === 'hi' ? 'कॉल में दिक़्क़त हुई' : 'அழைப்பில் பிழை'}
+                </h2>
+                <p className="text-sm text-muted-foreground mt-1 max-w-xs">
+                  {lang === 'hi' ? 'दोबारा कोशिश कीजिए।' : 'மீண்டும் முயற்சிக்கவும்.'}
+                </p>
+              </>
+            ) : (
+              <>
+                <motion.div
+                  initial={{ scale: 0.85, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  transition={{ type: 'spring', damping: 14 }}
+                  className="w-20 h-20 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center justify-center"
+                >
+                  <CircleStop className="w-10 h-10" />
+                </motion.div>
+                <h2 className="mt-5 text-lg font-semibold">
+                  {lang === 'hi' ? 'कॉल पूरी हुई' : 'அழைப்பு முடிந்தது'}
+                </h2>
+                <p className="text-sm text-muted-foreground mt-1 max-w-xs">
+                  {lang === 'hi'
+                    ? 'डॉक्टर साहब रिपोर्ट देखेंगे और मरीज़ को फिर से फ़ोन करेंगे।'
+                    : 'டாக்டர் அறிக்கையை ஆராய்ந்து மீண்டும் அழைப்பார்.'}
+                </p>
+              </>
             )}
+
+            {callId && (
+              <code className="mt-3 text-[11px] text-muted-foreground" aria-label={`Call id ${callId}`}>
+                call: {callId.slice(0, 8)}…
+              </code>
+            )}
+
+            <LangToggle value={lang} onChange={setLang} />
+
             <button
-              onClick={() => { setState('idle'); setTurns([]); setCallId(null); }}
-              className="mt-6 rounded-full bg-vaani-saffron text-vaani-navy px-6 py-2.5 font-semibold inline-flex items-center gap-2 active:scale-95"
+              onClick={() => { setState('idle'); setTurns([]); setCallId(null); setEndedReason(null); setMuted(false); }}
+              aria-label="Start a new call"
+              className="mt-4 rounded-full bg-vaani-saffron text-vaani-navy px-6 py-2.5 font-semibold inline-flex items-center gap-2 active:scale-95"
             >
               <Phone className="w-4 h-4" />
               {lang === 'hi' ? 'नई कॉल' : 'புதிய அழைப்பு'}

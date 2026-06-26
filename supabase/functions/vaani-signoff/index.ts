@@ -50,12 +50,18 @@ const SOUL_FALLBACK: Record<string, string> = {
   en: 'Hello. The doctor has reviewed your report. Rest well — we are with you.',
 };
 
-/** Trim Plan to a callback-friendly chunk (≤200 chars, full sentence). */
+/**
+ * Trim Plan to a callback-friendly chunk (≤200 chars, full sentence).
+ * Audit §4: previously this could split mid-word and trailing ellipsis
+ * landed in the middle of Tamil compound words. Now: prefer sentence
+ * boundary; if none, fall back to the last whitespace under maxChars
+ * so we never cut mid-token. Drop the ellipsis on Tamil/long Hindi
+ * plans (they read as "..." spoken aloud).
+ */
 function trimPlan(plan: string, maxChars = 200): string {
   if (!plan) return '';
   const cleaned = plan.replace(/\s+/g, ' ').trim();
   if (cleaned.length <= maxChars) return cleaned;
-  // Cut at the nearest sentence boundary under maxChars
   const cut = cleaned.slice(0, maxChars);
   const lastStop = Math.max(
     cut.lastIndexOf('।'),
@@ -63,7 +69,11 @@ function trimPlan(plan: string, maxChars = 200): string {
     cut.lastIndexOf('!'),
     cut.lastIndexOf('?'),
   );
-  return lastStop > maxChars / 2 ? cut.slice(0, lastStop + 1).trim() : cut.trim() + '…';
+  if (lastStop > maxChars / 2) return cut.slice(0, lastStop + 1).trim();
+  // No sentence boundary in the prefix — cut at last whitespace.
+  const lastSpace = cut.lastIndexOf(' ');
+  if (lastSpace > maxChars / 2) return cut.slice(0, lastSpace).trim();
+  return cut.trim();  // hard cut; no ellipsis — TTS reads them as words
 }
 
 const SARVAM_LANG_MAP: Record<string, string> = {
@@ -191,6 +201,12 @@ Deno.serve(async (req) => {
   }
 
   // ── Step 5: Insert dispatch row ────────────────────────────
+  // Audit §4: dispatched_at should NOT be stamped on failed status.
+  // Audit §4: handle the TOCTOU race when two RMP clicks fire at once —
+  // the unique idempotency_key throws 23505; treat it as already_dispatched
+  // (200 with existing row) instead of bubbling 500.
+  const nowIso = new Date().toISOString();
+  const dispatchedAt = ttsError ? null : nowIso;
   const { data: inserted, error: insertErr } = await sb
     .from('call_dispatch_queue')
     .insert({
@@ -208,8 +224,8 @@ Deno.serve(async (req) => {
         tts_error: ttsError,
       },
       channel: 'voice',
-      scheduled_at: new Date().toISOString(),
-      dispatched_at: new Date().toISOString(),
+      scheduled_at: nowIso,
+      dispatched_at: dispatchedAt,
       status: ttsError ? 'failed' : 'dispatched',
       trigger: 'mo_action',
       trigger_source_table: 'soap_notes',
@@ -219,6 +235,23 @@ Deno.serve(async (req) => {
     })
     .select('id')
     .single();
+
+  if (insertErr && (insertErr as any).code === '23505') {
+    // Unique-key clash on idempotency_key → another concurrent sign hit
+    // first. Return the existing row instead of a 500.
+    const { data: existing2 } = await sb
+      .from('call_dispatch_queue')
+      .select('id, status')
+      .eq('idempotency_key', idempotencyKey)
+      .maybeSingle();
+    return new Response(JSON.stringify({
+      dispatch_id: existing2?.id,
+      already_dispatched: true,
+      status: existing2?.status ?? 'dispatched',
+      message,
+      audio_b64: audioB64,
+    }), { status: 200, headers: { ...corsHeaders, 'content-type': 'application/json' } });
+  }
 
   if (insertErr) {
     return jsonErr(500, 'dispatch_insert_failed', insertErr.message);

@@ -4,10 +4,13 @@ export default function Landing() {
   return (
     <main className="min-h-screen bg-vaani-navy text-vaani-paper">
       <div className="container max-w-5xl py-16 md:py-24">
-        {/* Top brand */}
+        {/* Top brand — bilingual marker (audit §4 priya: brand mark was text-only "vaani") */}
         <div className="flex items-center gap-3 mb-16">
           <span className="vaani-bindi-pulse" aria-hidden />
           <span className="text-2xl font-semibold tracking-tight">vaani</span>
+          <span className="text-2xl font-medium tracking-tight text-vaani-paper/60 font-hind" lang="hi" aria-hidden>
+            · वाणी
+          </span>
         </div>
 
         {/* Hero */}
@@ -17,7 +20,7 @@ export default function Landing() {
           <span className="text-vaani-saffron">for Bharat</span>.
         </h1>
 
-        <p className="text-xl md:text-2xl max-w-2xl text-vaani-paper/80 mb-12 font-hind" lang="hi">
+        <p className="text-xl md:text-2xl max-w-2xl text-vaani-paper/80 mb-12 font-hind leading-relaxed" lang="hi">
           एक AI सहायक, हर ASHA के लिए — हर मरीज़ की भाषा में।
         </p>
         <p className="text-lg max-w-2xl text-vaani-paper/70 mb-12 leading-relaxed">
@@ -33,25 +36,25 @@ export default function Landing() {
           <Stat number="79 cr+" label="ABHA IDs issued (and counting)" />
         </div>
 
-        {/* CTAs */}
-        <div className="flex flex-wrap gap-4">
+        {/* CTAs — audit §4: clear primary + two secondaries instead of three coequal */}
+        <div className="flex flex-col sm:flex-row gap-3">
           <Link
-            to="/auth"
-            className="inline-flex items-center px-6 py-3 rounded-lg bg-vaani-saffron text-vaani-navy font-semibold hover:opacity-90 transition"
+            to="/asha"
+            className="inline-flex items-center justify-center px-6 py-3 rounded-lg bg-vaani-saffron text-vaani-navy font-semibold hover:opacity-90 transition shadow-lg shadow-vaani-saffron/20"
           >
-            Sign in
+            Try the demo →
           </Link>
           <Link
             to="/cockpit"
-            className="inline-flex items-center px-6 py-3 rounded-lg border border-vaani-paper/30 text-vaani-paper hover:bg-vaani-paper/10 transition"
+            className="inline-flex items-center justify-center px-6 py-3 rounded-lg border border-vaani-paper/30 text-vaani-paper hover:bg-vaani-paper/10 transition"
           >
-            Doctor cockpit →
+            Doctor cockpit
           </Link>
           <Link
-            to="/asha"
-            className="inline-flex items-center px-6 py-3 rounded-lg border border-vaani-paper/30 text-vaani-paper hover:bg-vaani-paper/10 transition"
+            to="/auth"
+            className="inline-flex items-center justify-center px-6 py-3 rounded-lg text-vaani-paper/80 hover:text-vaani-paper hover:bg-vaani-paper/5 transition"
           >
-            ASHA app →
+            Sign in
           </Link>
         </div>
 

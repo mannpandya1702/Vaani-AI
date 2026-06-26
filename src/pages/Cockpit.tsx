@@ -163,14 +163,24 @@ function useCockpitFeed() {
   return useQuery<{ rows: CockpitRow[]; fetched_at: string }>({
     queryKey: ['cockpit-feed'],
     queryFn: async () => {
-      const r = await fetch(`${FN_BASE}/cockpit-feed?limit=30`, {
-        headers: { Authorization: FN_AUTH },
-      });
-      if (!r.ok) throw new Error(`cockpit-feed ${r.status}`);
-      return r.json();
+      // Audit §4: 8s client-side timeout so a stuck edge function
+      // doesn't strand the UI in a loading state forever.
+      const ctl = new AbortController();
+      const tid = window.setTimeout(() => ctl.abort(), 8000);
+      try {
+        const r = await fetch(`${FN_BASE}/cockpit-feed?limit=30`, {
+          headers: { Authorization: FN_AUTH },
+          signal: ctl.signal,
+        });
+        if (!r.ok) throw new Error(`cockpit-feed ${r.status}`);
+        return await r.json();
+      } finally {
+        window.clearTimeout(tid);
+      }
     },
     refetchInterval: 3000,
     refetchOnWindowFocus: true,
+    retry: 1,
   });
 }
 
@@ -268,10 +278,14 @@ function TriageCard({ row, onClick }: { row: CockpitRow; onClick: () => void }) 
   return (
     <button
       onClick={onClick}
+      aria-label={`${row.triage.band} ${row.triage.presumptive_label.replace(/_/g, ' ')}${isSigned ? ', signed' : ', awaiting sign-off'}`}
       className={cn(
         'w-full text-left rounded-xl border bg-card p-4 transition shadow-sm hover:shadow-md hover:scale-[1.005]',
         cls.cardBorder,
-        isRed && !isSigned && 'ring-2 ring-red-500/40 animate-pulse',
+        // Audit §4: pulse only RED + unsigned. Honor prefers-reduced-motion.
+        isRed && !isSigned && 'ring-2 ring-red-500/40 motion-safe:animate-pulse',
+        // Signed RED rows get an emerald glow instead of a continuing pulse.
+        isSigned && isRed && 'ring-1 ring-emerald-500/40',
         isSigned && 'opacity-70',
       )}
     >
@@ -332,6 +346,18 @@ function SoapReviewDialog({
   const [signing, setSigning] = useState(false);
   const [soulMessage, setSoulMessage] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Audit §4: reset soulMessage when the dialog closes so the next row's
+  // "Sent: …" banner doesn't leak across cards. Also revoke any pending
+  // blob URL on the <audio>.
+  useEffect(() => {
+    if (open) return;
+    setSoulMessage(null);
+    if (audioRef.current?.dataset.blobUrl) {
+      try { URL.revokeObjectURL(audioRef.current.dataset.blobUrl); } catch {/* noop */}
+      audioRef.current.dataset.blobUrl = '';
+    }
+  }, [open]);
 
   if (!row) return null;
   const isSigned = !!row.soap?.mo_signed_at;

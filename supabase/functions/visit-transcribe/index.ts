@@ -166,6 +166,14 @@ Deno.serve(async (req) => {
   if (!audioB64 && !audioUrl) {
     return jsonErr(400, 'missing_audio', 'Provide audio_b64 or audio_url');
   }
+  // Audit §4: cap inline audio_b64 at ~10 MB binary (~13.4 MB encoded).
+  // Above this, require the caller to upload to storage and pass
+  // audio_url. Keeps the 256 MB edge worker out of OOM territory.
+  const MAX_B64_LEN = Math.ceil(10 * 1024 * 1024 * 4 / 3);  // 13.97 MB chars
+  if (audioB64 && audioB64.length > MAX_B64_LEN) {
+    return jsonErr(413, 'audio_too_large',
+      `audio_b64 is ${(audioB64.length / 1_048_576).toFixed(1)} MB encoded — upload to storage and pass audio_url instead.`);
+  }
 
   // ── Step 1: Send to Deepgram ─────────────────────────────
   // Multilingual code-switching for HI+EN with diarization.
