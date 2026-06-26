@@ -1,8 +1,10 @@
-# Stage 3 — AI Shadow Diagnosis vs Junior GP Benchmark
+# Stage 3 — AI-assisted Presumptive Screening Benchmark (vs Junior GP)
 
-The hackathon problem statement explicitly asks:
+The hackathon problem statement asks for what it calls *"AI Shadow Diagnosis"*:
 
 > *"AI Shadow Diagnosis: a parallel AI that generates its own differential diagnosis and gets benchmarked against junior GPs"*
+
+(Quoted verbatim from the brief. In every public-facing artefact we ship — deck, video, README, cockpit chrome — we use the phrase **"AI-assisted presumptive screening"** instead, per NMC Act 2019 / IMC Reg 6.1.1, which bans the noun "diagnosis" in commercial or marketing material from a non-RMP source. The technical comparison being run is unchanged; only the label.)
 
 This directory holds the **methodology + a proof-of-concept benchmark set** for that comparison.
 
