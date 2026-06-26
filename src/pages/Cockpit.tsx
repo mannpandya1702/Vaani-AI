@@ -438,9 +438,9 @@ function SoapReviewDialog({
                 <div className="rounded-lg border bg-amber-500/5 p-3 text-xs">
                   <div className="font-semibold mb-1 text-amber-700 dark:text-amber-300">AI Draft Timestamp</div>
                   <div className="text-muted-foreground">
-                    Drafted by Manorama (AI Decision-Support Agent) · Demo mode · Not a Registered Medical Practitioner.
+                    AI-pre-drafted from Vaani's screening transcript. Demo mode · Not a Registered Medical Practitioner. The named RMP independently reviews + signs.
                     {isSigned && (
-                      <> Approved at {new Date(row.soap.mo_signed_at!).toLocaleString()}.</>
+                      <> Signed at {new Date(row.soap.mo_signed_at!).toLocaleString()}.</>
                     )}
                   </div>
                 </div>

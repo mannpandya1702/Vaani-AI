@@ -61,7 +61,7 @@ export default function Landing() {
             Vaani-AI provides AI-assisted clinical decision support. Not a
             substitute for professional medical advice.
           </p>
-          <p>ABDM Sandbox certified; production rollout post-pilot.</p>
+          <p>ABDM Sandbox integration in progress; production rollout post-pilot.</p>
         </div>
       </div>
     </main>
