@@ -625,6 +625,7 @@ function Me() {
   const pending = rows.filter((r) => !r.soap?.mo_signed_at).length;
   const rmpName = (import.meta as any).env?.VITE_RMP_NAME ?? 'डॉक्टर साहब';
   const rmpReg = (import.meta as any).env?.VITE_RMP_MCI_REG ?? '—';
+  const agentPhone = (import.meta as any).env?.VITE_AGENT_PHONE_DISPLAY ?? null;
   return (
     <div className="container max-w-screen-md p-4">
       <h2 className="text-2xl font-semibold tracking-tight mb-4">You</h2>
@@ -632,6 +633,13 @@ function Me() {
         <div className="text-sm font-semibold">{rmpName}</div>
         <div className="text-xs text-muted-foreground">MCI / HPR Reg # {rmpReg}</div>
       </div>
+      {agentPhone && (
+        <div className="rounded-lg border bg-card p-4 mb-4">
+          <div className="text-xs uppercase tracking-wider text-muted-foreground mb-1">Vaani agent number</div>
+          <div className="text-lg font-mono font-semibold">{agentPhone}</div>
+          <div className="text-[11px] text-muted-foreground mt-1">Callbacks + reminders go out from this number.</div>
+        </div>
+      )}
       <div className="grid grid-cols-2 gap-3">
         <Stat label="Signed today" value={signedToday} />
         <Stat label="Pending" value={pending} />

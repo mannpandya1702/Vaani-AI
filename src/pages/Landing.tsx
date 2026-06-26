@@ -29,6 +29,8 @@ export default function Landing() {
           Indic STT + TTS (Sarvam) · Claude Sonnet 4.6 · DPDP-compliant PII
           redaction · ABDM-ready.
         </p>
+        <AgentNumberBanner />
+
 
         {/* Stats */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-16">
@@ -79,6 +81,29 @@ function Stat({ number, label }: { number: string; label: string }) {
     <div className="rounded-xl border border-vaani-paper/15 bg-vaani-paper/5 p-5">
       <div className="text-3xl font-bold text-vaani-saffron mb-1">{number}</div>
       <div className="text-sm text-vaani-paper/70">{label}</div>
+    </div>
+  );
+}
+
+/**
+ * Vaani-AI's dial-in / SMS / WhatsApp number. Reads VITE_AGENT_PHONE_DISPLAY
+ * — when unset (today), shows a placeholder + a small "coming with pilot"
+ * note. When set, becomes the patient-readable hero ID for the demo video
+ * + deck. See docs/agent-number.md for the wiring map.
+ */
+function AgentNumberBanner() {
+  const display = (import.meta as any).env?.VITE_AGENT_PHONE_DISPLAY as string | undefined;
+  return (
+    <div className="mb-12 inline-flex items-baseline gap-3 rounded-xl border border-vaani-paper/15 bg-vaani-paper/5 px-5 py-3">
+      <span className="text-xs uppercase tracking-wider text-vaani-paper/60">Call us</span>
+      <span className="text-2xl font-mono font-semibold text-vaani-saffron">
+        {display || '1800 ___ ____'}
+      </span>
+      {!display && (
+        <span className="text-[11px] text-vaani-paper/50">
+          live with the toll-free purchase
+        </span>
+      )}
     </div>
   );
 }

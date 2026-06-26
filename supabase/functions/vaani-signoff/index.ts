@@ -205,6 +205,11 @@ Deno.serve(async (req) => {
   // Audit §4: handle the TOCTOU race when two RMP clicks fire at once —
   // the unique idempotency_key throws 23505; treat it as already_dispatched
   // (200 with existing row) instead of bubbling 500.
+  // agent-number wiring (docs/agent-number.md §2): stamp caller_id =
+  // AGENT_PHONE_E164 so call-dispatcher's Exotel dial uses Vaani's own
+  // E.164 (same number patients dialled in on). Falls back to null when
+  // unset — call-dispatcher then uses EXOTEL_VIRTUAL_NUMBER as the default.
+  const callerId = Deno.env.get('AGENT_PHONE_E164') ?? null;
   const nowIso = new Date().toISOString();
   const dispatchedAt = ttsError ? null : nowIso;
   const { data: inserted, error: insertErr } = await sb
@@ -222,6 +227,7 @@ Deno.serve(async (req) => {
         audio_format: 'wav',
         audio_bytes: audioBytes,
         tts_error: ttsError,
+        caller_id: callerId,
       },
       channel: 'voice',
       scheduled_at: nowIso,
