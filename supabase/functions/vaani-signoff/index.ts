@@ -27,6 +27,7 @@ import { corsHeaders, handleCorsPreflight } from '../_shared/cors.ts';
 import { verifyBearer } from '../_shared/constant-time-compare.ts';
 import { supabaseAdmin } from '../_shared/supabase-admin.ts';
 import { sarvamTTS } from '../_shared/sarvam-client.ts';
+import { scrubDrugMentions } from '../_shared/drug-scrub.ts';
 
 // Per-language opening line. Followed in turn by the doctor's PLAN field
 // from soap_notes (verbatim, the RMP-authored non-drug instructions),
@@ -143,7 +144,26 @@ Deno.serve(async (req) => {
   // doctor's plan (read verbatim from soap_notes.plan, RMP-authored).
   // No drug names — soap-generate's contract keeps drugs in
   // mo_only_drug_hints, so plan is patient-safe to speak aloud.
-  const planSnippet = trimPlan(String((soap as { plan?: string }).plan ?? ''));
+  const rawPlan = String((soap as { plan?: string }).plan ?? '');
+  // Belt-and-braces drug-scrub before reading anything to TTS.
+  // The DB CHECK constraint catches drug names at write time; this catches
+  // anything the LLM emits that the constraint missed (case differences,
+  // homophones, transliteration variants).
+  const scrubbed = scrubDrugMentions(rawPlan, lang);
+  if (scrubbed.hit) {
+    // Audit any leak we caught at runtime — the LLM should not be emitting
+    // drug names in the patient-facing plan field.
+    await sb.from('ops_incidents').insert({
+      severity: 'high',
+      source: 'vaani_signoff',
+      category: 'drug_name_in_plan',
+      title: `vaani-signoff scrubbed drug mention(s) from SOAP plan`,
+      description: `soap_id=${soap.id} hits=${scrubbed.detections.join(',')}`,
+      related_call_id: soap.call_id,
+    }).then(() => {}, () => {/* best-effort */});
+    console.warn(`[vaani-signoff] drug mention scrubbed from plan: ${scrubbed.detections.join(',')}`);
+  }
+  const planSnippet = trimPlan(scrubbed.cleaned);
   const message = planSnippet
     ? `${SOUL_OPENER[lang] ?? SOUL_OPENER.hi}${planSnippet}${SOUL_CLOSER[lang] ?? SOUL_CLOSER.hi}`
     : (SOUL_FALLBACK[lang] ?? SOUL_FALLBACK.hi);

@@ -54,7 +54,7 @@ Deno.serve(async (req) => {
 
   const [soapResp, callResp, patientResp] = await Promise.all([
     sb.from('soap_notes')
-      .select('id, call_id, subjective, objective, assessment, plan, presumptive_screening_label, differential_list, icd10_codes, icd11_codes, mo_only_drug_hints:original_text, lang, mo_signed_at, mo_user_id, generated_at')
+      .select('id, call_id, subjective, objective, assessment, plan, presumptive_screening_label, differential_list, icd10_codes, icd11_codes, mo_only_drug_hints, lang, mo_signed_at, mo_user_id, generated_at')
       .in('call_id', callIds),
     sb.from('calls')
       .select('id, started_at, ended_at, channel, lang_detected')

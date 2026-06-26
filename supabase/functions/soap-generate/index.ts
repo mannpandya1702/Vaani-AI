@@ -222,6 +222,10 @@ Deno.serve(async (req) => {
       icd11_codes: Array.isArray(soap.icd11_codes) ? soap.icd11_codes : [],
       presumptive_screening_label: String(soap.presumptive_screening_label ?? 'unspecified'),
       differential_list: Array.isArray(soap.differential_list) ? soap.differential_list : [],
+      // Audit-§2 fix: persist mo_only_drug_hints (migration 009 added
+      // the column). MO-only — never read by vaani-signoff or any
+      // patient-facing surface.
+      mo_only_drug_hints: Array.isArray(soap.mo_only_drug_hints) ? soap.mo_only_drug_hints : [],
       vitals_source: 'NOT_AVAILABLE',
       vitals_json: {},
       esanjeevani_payload: soap.esanjeevani_payload ?? null,

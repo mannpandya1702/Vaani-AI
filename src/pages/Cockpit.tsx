@@ -57,6 +57,7 @@ interface CockpitRow {
     differential_list: any[];
     icd10_codes: string[];
     icd11_codes: string[];
+    mo_only_drug_hints: string[] | null;
     lang: string;
     mo_signed_at: string | null;
     mo_user_id: string | null;
@@ -406,6 +407,20 @@ function SoapReviewDialog({
                 <SoapSection label="O — Objective" body={row.soap.objective} />
                 <SoapSection label="A — Assessment" body={row.soap.assessment} />
                 <SoapSection label="P — Plan (patient-facing)" body={row.soap.plan} />
+
+                {row.soap.mo_only_drug_hints && row.soap.mo_only_drug_hints.length > 0 && (
+                  <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3">
+                    <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-300 mb-1">
+                      <Shield className="w-3.5 h-3.5" />
+                      AI drug suggestions · MO-only · NOT shared with patient
+                    </div>
+                    <ul className="text-sm space-y-1">
+                      {row.soap.mo_only_drug_hints.map((d, i) => (
+                        <li key={i} className="font-mono text-xs">• {d}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
 
                 {row.soap.differential_list?.length > 0 && (
                   <div>

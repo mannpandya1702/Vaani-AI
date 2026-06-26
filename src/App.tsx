@@ -6,6 +6,7 @@ import Auth from '@/pages/Auth';
 import Cockpit from '@/pages/Cockpit';
 import AshaApp from '@/pages/AshaApp';
 import NotFound from '@/pages/NotFound';
+import { DemoGate } from '@/components/DemoGate';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -26,8 +27,8 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Landing />} />
           <Route path="/auth" element={<Auth />} />
-          <Route path="/cockpit/*" element={<Cockpit />} />
-          <Route path="/asha/*" element={<AshaApp />} />
+          <Route path="/cockpit/*" element={<DemoGate><Cockpit /></DemoGate>} />
+          <Route path="/asha/*" element={<DemoGate><AshaApp /></DemoGate>} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
