@@ -226,7 +226,7 @@ function TriageQueue() {
             rel="noopener noreferrer"
             className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-primary text-primary-foreground px-4 py-2 text-sm font-medium hover:opacity-90"
           >
-            <Mic className="w-4 h-4" /> Start a test screening ↗
+            <Mic className="w-4 h-4" /> Start a screening ↗
           </a>
           <div className="mt-2 text-[11px]">opens the patient screening in a new tab — keep this cockpit open to watch the card arrive</div>
         </div>

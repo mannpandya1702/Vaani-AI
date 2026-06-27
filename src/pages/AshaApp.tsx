@@ -533,29 +533,9 @@ function MicCheck() {
   const [level, setLevel] = useState(0);
   const [peak, setPeak] = useState(0);
   const [device, setDevice] = useState<string>('');
-  const [netTest, setNetTest] = useState<'idle' | 'running' | 'ok' | 'bad'>('idle');
-  const [netDetail, setNetDetail] = useState<string>('');
   const streamRef = useRef<MediaStream | null>(null);
   const acRef = useRef<AudioContext | null>(null);
   const rafRef = useRef<number | null>(null);
-
-  async function runVapiNetTest() {
-    setNetTest('running');
-    setNetDetail('');
-    try {
-      const results = await (Vapi as any).runNetworkTestsStandalone();
-      console.log('[vapi.netTest]', results);
-      const turn = results?.networkConnectivity?.result;
-      const ws = results?.websocketConnectivity?.result;
-      const ok = (!turn || turn === 'passed') && (!ws || ws === 'passed');
-      setNetTest(ok ? 'ok' : 'bad');
-      setNetDetail(`TURN: ${turn ?? 'n/a'} · WS: ${ws ?? 'n/a'}`);
-    } catch (e: any) {
-      console.error('[vapi.netTest] failed', e);
-      setNetTest('bad');
-      setNetDetail(String(e?.message ?? e).slice(0, 120));
-    }
-  }
 
   async function start() {
     try {
@@ -682,23 +662,6 @@ function MicCheck() {
           No microphone is connected. Plug one in and reload.
         </div>
       )}
-
-      <div className="mt-3 pt-3 border-t flex items-center gap-2 text-xs">
-        <button
-          onClick={runVapiNetTest}
-          disabled={netTest === 'running'}
-          className="rounded-md border bg-secondary/60 hover:bg-secondary px-2 py-1 disabled:opacity-60"
-        >
-          {netTest === 'running' ? 'Testing…' : 'Test VAPI network'}
-        </button>
-        {netTest === 'ok' && (
-          <span className="text-emerald-600 dark:text-emerald-400">✓ VAPI reachable</span>
-        )}
-        {netTest === 'bad' && (
-          <span className="text-red-600 dark:text-red-400">✗ blocked</span>
-        )}
-        {netDetail && <span className="text-muted-foreground truncate">{netDetail}</span>}
-      </div>
     </div>
   );
 }
