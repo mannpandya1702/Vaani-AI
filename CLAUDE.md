@@ -117,10 +117,22 @@ Caller opens https://app.vaani.ai/asha (web) OR dials Exotel toll-free (PSTN)
                               → Claude with tool-forced emit_soap JSON
                               → mo_only_drug_hints persisted (audit D3)
                               → insert soap_notes row
+                          → /functions/v1/shadow-diagnosis  (Stage 3)
+                              → SEPARATE AI clinical opinion, AFTER SOAP and
+                                BEFORE RMP review. Claude tool-forced
+                                emit_shadow_opinion: differential_diagnoses +
+                                recommended_tests + recommended_medications
+                                (MO-only) + referral + urgency + missing_info.
+                              → deterministic safety override: red flags raise
+                                urgency (RED→Emergency, AMBER→≥Urgent).
+                              → insert shadow_diagnoses row. NEVER overrides
+                                the doctor — only advises.
 
   Cockpit poll (/functions/v1/cockpit-feed every 3s) shows the new card
   to the on-call RMP. RMP clicks card → SoapReviewDialog → MO-only
-  amber drug panel → Approve & Sign → /functions/v1/soap-sign sets
+  amber drug panel + AI Clinical Opinion card (Ignore / Accept / Edit →
+  /functions/v1/shadow-diagnosis-review stores the doctor's final decision
+  alongside the AI recommendation) → Approve & Sign → /functions/v1/soap-sign sets
   mo_signed_at + atomically fires /functions/v1/vaani-signoff →
   Sarvam Bulbul renders patient callback ("डॉक्टर साहब ने देख लिया है …")
   with drug-scrub applied. Audio b64 returns to the cockpit and plays
@@ -209,7 +221,7 @@ ABDM ──────── Sandbox today; M2/M3 in docs/production-roadmap.md
 
 ### Functions Requiring `--no-verify-jwt` on Deploy
 All entries in `supabase/config.toml` with `verify_jwt = false`:
-`vapi-webhook · sarvam-stt-bridge · sarvam-tts-bridge · gupshup-inbound-webhook · gupshup-delivery-webhook · msg91-dlr-webhook · exotel-passthru-webhook · abdm-callback-webhook · call-dispatcher · dots-adherence-scanner · anc-schedule-scanner · medication-reminder-scanner · cohort-scanner · cohort-dispatcher · score-triage · process-call-records · audit-compliance-coverage`
+`vapi-webhook · sarvam-stt-bridge · sarvam-tts-bridge · gupshup-inbound-webhook · gupshup-delivery-webhook · msg91-dlr-webhook · exotel-passthru-webhook · abdm-callback-webhook · call-dispatcher · dots-adherence-scanner · anc-schedule-scanner · medication-reminder-scanner · cohort-scanner · cohort-dispatcher · score-triage · process-call-records · shadow-diagnosis · shadow-diagnosis-review · audit-compliance-coverage`
 
 ---
 

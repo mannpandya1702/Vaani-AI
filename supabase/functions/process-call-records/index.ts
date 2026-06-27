@@ -5,6 +5,7 @@
 // ║  Pipeline:                                                      ║
 // ║   1. triage-score (Claude Sonnet 4.6 with Aanya v2 prompt)      ║
 // ║   2. soap-generate (eSanjeevani SOAP via tool-forced JSON)      ║
+// ║   2.5 shadow-diagnosis (AI clinical opinion, BEFORE RMP review) ║
 // ║                                                                 ║
 // ║  Signoff dispatch is fired by DB trigger on soap_notes when the ║
 // ║  MO sets mo_signed_at — see migration 007 + vaani-signoff fn.   ║
@@ -95,6 +96,24 @@ Deno.serve(async (req) => {
     // can show the triage card and let the MO write a SOAP by hand.
   }
 
+  // ── Step 2.5: shadow-diagnosis (AI Shadow Diagnosis, Stage 3) ─
+  // Runs AFTER SOAP and BEFORE the RMP reviews — a separate AI clinical
+  // opinion that NEVER overrides the doctor. Non-fatal: if it fails the
+  // cockpit still shows triage + SOAP, just without the AI opinion card.
+  const shadowStart = Date.now();
+  const shadow = await invokeEdge('shadow-diagnosis', callId);
+  trace.shadow = { status: shadow.status, ms: Date.now() - shadowStart };
+  if (!shadow.ok) {
+    await sb.from('ops_incidents').insert({
+      severity: 'low',
+      source: 'process_call_records',
+      category: 'shadow_diagnosis_failed',
+      title: `shadow-diagnosis failed for call ${callId}`,
+      description: JSON.stringify({ status: shadow.status, body: shadow.body }).slice(0, 1000),
+      related_call_id: callId,
+    });
+  }
+
   // ── Step 3: Signoff dispatch is wired via DB trigger on   ─────
   //           soap_notes.mo_signed_at — vaani-signoff function.
   //           Nothing to do here.
@@ -102,6 +121,7 @@ Deno.serve(async (req) => {
   trace.total_ms = Date.now() - t0;
   trace.triage_result = triage.body;
   trace.soap_result = soap.body;
+  trace.shadow_result = shadow.body;
 
   return new Response(JSON.stringify({ ok: true, trace }), {
     status: 200, headers: { ...corsHeaders, 'content-type': 'application/json' },
