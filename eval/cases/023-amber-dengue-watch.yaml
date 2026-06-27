@@ -1,0 +1,24 @@
+id: case_023
+title: "AMBER — 32yo, 3 days fever + body ache + headache, no warning signs yet (dengue watch)"
+clinical_stage: pre_visit_capture
+patient:
+  age_years: 32
+  sex: M
+  preferred_language: hi
+  pregnancy_status: not_applicable
+transcript:
+  - role: assistant
+    text: "नमस्ते जी, वाणी बात कर रहे हैं। क्या तकलीफ़ है?"
+  - role: user
+    text: "तीन दिन से बुख़ार है, बदन दर्द और सिर दर्द भी"
+  - role: assistant
+    text: "अच्छा… पेट दर्द, उल्टी, या मसूड़ों से खून जैसा कुछ?"
+  - role: user
+    text: "नहीं, ऐसा कुछ नहीं। बस कमज़ोरी है, खा-पी रहा हूँ"
+expected:
+  band: AMBER
+  red_flag_categories: []
+  presumptive_label: [dengue_suspect, typhoid_suspect, malaria_suspect]
+  confidence_min: 0.6
+  recommended_action_must_not_contain: ["108", "diagnosis"]
+  needs_mo_review: true

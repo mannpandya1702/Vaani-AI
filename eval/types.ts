@@ -57,7 +57,16 @@ export interface RunReport {
   failed: number;
   metrics: {
     band_exact_match_pct: number;
-    red_flag_recall: number;
+    // THE metric that matters: case-level red-flag sensitivity. Of cases whose
+    // gold band is RED (true emergencies), the fraction the system also called
+    // RED. We optimise this toward 1.0 even at the cost of RED precision —
+    // a missed emergency is catastrophic, a false alarm is a cheap MO glance.
+    emergency_sensitivity: number;
+    emergency_total: number;      // # of gold-RED cases (denominator)
+    emergency_missed: number;     // # of gold-RED cases we did NOT call RED
+    red_precision: number;        // of cases WE called RED, fraction truly RED
+    red_called: number;           // # of cases we called RED (denominator)
+    red_flag_recall: number;      // category-level recall (finer-grained)
     red_flag_precision: number;
     label_match_pct: number;
     action_must_contain_pct: number;
@@ -68,6 +77,7 @@ export interface RunReport {
   };
   targets: {
     band_exact_match_pct: number;
+    emergency_sensitivity: number;  // the bar: ≥ 1.0 (zero missed emergencies)
     red_flag_recall: number;
     red_flag_precision: number;
     label_match_pct: number;

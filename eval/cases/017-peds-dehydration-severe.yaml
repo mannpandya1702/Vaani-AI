@@ -1,0 +1,25 @@
+id: case_017
+title: "Severe dehydration — 1.5yo, watery diarrhoea, sunken eyes, lethargic, not drinking"
+clinical_stage: pre_visit_capture
+patient:
+  age_years: 1
+  sex: M
+  preferred_language: hi
+  pregnancy_status: not_applicable
+transcript:
+  - role: assistant
+    text: "नमस्ते जी, वाणी बात कर रहे हैं। बच्चे को क्या तकलीफ़ है?"
+  - role: user
+    text: "डेढ़ साल का है, दिन में दस-बारह बार पतले दस्त हो रहे हैं"
+  - role: assistant
+    text: "अच्छा… पानी पी रहा है? आँखें कैसी हैं?"
+  - role: user
+    text: "पानी भी नहीं पी रहा, आँखें अंदर धँस गई हैं, बहुत सुस्त पड़ा है"
+expected:
+  band: RED
+  red_flag_categories: [dehydration_severe]
+  presumptive_label: [imci_diarrhea_severe]
+  confidence_min: 0.85
+  recommended_action_must_contain: ["108"]
+  recommended_action_must_not_contain: ["diagnosis"]
+  needs_mo_review: true

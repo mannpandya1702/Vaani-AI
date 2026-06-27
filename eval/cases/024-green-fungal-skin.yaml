@@ -1,0 +1,24 @@
+id: case_024
+title: "GREEN — 24yo, itchy ring-shaped skin rash 5 days, no fever (precision test)"
+clinical_stage: pre_visit_capture
+patient:
+  age_years: 24
+  sex: F
+  preferred_language: hi
+  pregnancy_status: not_applicable
+transcript:
+  - role: assistant
+    text: "नमस्ते जी, वाणी बात कर रहे हैं। क्या तकलीफ़ है?"
+  - role: user
+    text: "जाँघ पर गोल-गोल खुजली वाले चकत्ते हो गए हैं, पाँच दिन से"
+  - role: assistant
+    text: "अच्छा… बुख़ार या और कोई तकलीफ़?"
+  - role: user
+    text: "नहीं, बुख़ार नहीं है, बस खुजली है"
+expected:
+  band: GREEN
+  red_flag_categories: []
+  presumptive_label: [minor_dermatitis]
+  confidence_min: 0.6
+  recommended_action_must_not_contain: ["108", "diagnosis"]
+  needs_mo_review: false

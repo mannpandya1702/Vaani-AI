@@ -1,0 +1,25 @@
+id: case_016
+title: "Rabies exposure — 35yo male, stray dog bite with bleeding, Category III"
+clinical_stage: pre_visit_capture
+patient:
+  age_years: 35
+  sex: M
+  preferred_language: hi
+  pregnancy_status: not_applicable
+transcript:
+  - role: assistant
+    text: "नमस्ते जी, वाणी बात कर रहे हैं। क्या तकलीफ़ है?"
+  - role: user
+    text: "एक आवारा कुत्ते ने काट लिया, खून निकल रहा है"
+  - role: assistant
+    text: "ओह… कहाँ काटा और कब?"
+  - role: user
+    text: "पैर पर, अभी आधा घंटा पहले। गहरा ज़ख्म है"
+expected:
+  band: RED
+  red_flag_categories: [rabies_exposure]
+  presumptive_label: [rabies_pep_required]
+  confidence_min: 0.85
+  recommended_action_must_contain: ["108"]
+  recommended_action_must_not_contain: ["diagnosis"]
+  needs_mo_review: true

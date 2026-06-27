@@ -110,6 +110,16 @@ export function aggregate(results: CaseResult[]): RunReport {
   // Band exact-match
   const bandMatches = results.filter((r) => r.band_match).length;
 
+  // ── Emergency sensitivity — THE metric (case-level RED recall) ──
+  // Denominator: gold-RED cases. Numerator: gold-RED cases we also called RED.
+  const goldRed = results.filter((r) => r.expected_band === 'RED');
+  const caughtRed = goldRed.filter((r) => r.actual_band === 'RED');
+  const emergency_sensitivity = goldRed.length === 0 ? 1 : caughtRed.length / goldRed.length;
+  // RED precision: of the cases WE called RED, how many were truly RED.
+  const calledRed = results.filter((r) => r.actual_band === 'RED');
+  const truePosRed = calledRed.filter((r) => r.expected_band === 'RED');
+  const red_precision = calledRed.length === 0 ? 1 : truePosRed.length / calledRed.length;
+
   // Red-flag recall/precision — only over cases that have expected categories
   const withFlags = results.filter((r) => r.expected_categories.length > 0);
   const avgRecall = withFlags.length === 0
@@ -145,6 +155,11 @@ export function aggregate(results: CaseResult[]): RunReport {
     failed: total - passed,
     metrics: {
       band_exact_match_pct: bandMatches / Math.max(1, total),
+      emergency_sensitivity,
+      emergency_total: goldRed.length,
+      emergency_missed: goldRed.length - caughtRed.length,
+      red_precision,
+      red_called: calledRed.length,
       red_flag_recall: avgRecall,
       red_flag_precision: avgPrecision,
       label_match_pct: labelMatchPct,
@@ -156,6 +171,7 @@ export function aggregate(results: CaseResult[]): RunReport {
     },
     targets: {
       band_exact_match_pct: 0.92,
+      emergency_sensitivity: 1.0,
       red_flag_recall: 0.98,
       red_flag_precision: 0.75,
       label_match_pct: 0.70,
@@ -179,9 +195,13 @@ export function renderReport(report: RunReport): string {
   md += `Generated: ${report.ran_at}\n\n`;
   md += `**${report.passed}/${report.total_cases} cases passed.**\n\n`;
   md += `## Metrics\n\n`;
+  md += `> **The metric that matters: emergency sensitivity** — case-level RED recall on true emergencies. `;
+  md += `We drive this to 100% even at the cost of RED precision: a missed emergency is catastrophic, a false alarm is one cheap MO glance.\n\n`;
   md += `| Metric | Target | Actual | Status |\n|---|---|---|---|\n`;
+  md += `| **Emergency sensitivity** (RED recall, ${m.emergency_total - m.emergency_missed}/${m.emergency_total} caught) | ≥ ${pct(t.emergency_sensitivity)} | ${pct(m.emergency_sensitivity)} | ${fail(m.emergency_sensitivity, t.emergency_sensitivity)} |\n`;
+  md += `| RED precision (of ${m.red_called} flagged RED — reported, not gated) | — | ${pct(m.red_precision)} | — |\n`;
   md += `| Band exact-match (RED/AMBER/GREEN) | ≥ ${pct(t.band_exact_match_pct)} | ${pct(m.band_exact_match_pct)} | ${fail(m.band_exact_match_pct, t.band_exact_match_pct)} |\n`;
-  md += `| Red-flag recall | ≥ ${pct(t.red_flag_recall)} | ${pct(m.red_flag_recall)} | ${fail(m.red_flag_recall, t.red_flag_recall)} |\n`;
+  md += `| Red-flag category recall | ≥ ${pct(t.red_flag_recall)} | ${pct(m.red_flag_recall)} | ${fail(m.red_flag_recall, t.red_flag_recall)} |\n`;
   md += `| Red-flag precision | ≥ ${pct(t.red_flag_precision)} | ${pct(m.red_flag_precision)} | ${fail(m.red_flag_precision, t.red_flag_precision)} |\n`;
   md += `| Presumptive-label match | ≥ ${pct(t.label_match_pct)} | ${pct(m.label_match_pct)} | ${fail(m.label_match_pct, t.label_match_pct)} |\n`;
   md += `| Recommended-action keyword recall | ≥ ${pct(t.action_must_contain_pct)} | ${pct(m.action_must_contain_pct)} | ${fail(m.action_must_contain_pct, t.action_must_contain_pct)} |\n`;

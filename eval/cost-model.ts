@@ -42,6 +42,13 @@ const SHAPE = {
   soap_in: 2200, soap_cached_in: 1700, soap_out: 800,         // post-call soap-generate
 };
 
+interface LiveLlm { cold: number; warm: number }
+interface CostModel {
+  stt: number; tts: number; live: LiveLlm; triage: number; soap: number;
+  telTollfree: number; telBackdial: number;
+  totals: { tollfree_cold: number; tollfree_warm: number; missedcall_cold: number; missedcall_warm: number };
+}
+
 const inr = (usd: number) => usd * USD_INR;
 const round2 = (x: number) => Math.round(x * 100) / 100;
 
@@ -57,7 +64,7 @@ function claudeInr(tin: number, tout: number, cachedIn = 0): number {
 
 // Live voice LLM cost across the call, cold (no cache) vs warm (system block
 // cached from turn 2 onward via the vapi-custom-llm proxy).
-function liveLlmInr(): { cold: number; warm: number } {
+function liveLlmInr(): LiveLlm {
   let cold = 0, warm = 0;
   for (let t = 0; t < SHAPE.live_turns; t++) {
     const tin = SHAPE.live_sys_tokens + SHAPE.live_dyn_tokens;
@@ -69,7 +76,7 @@ function liveLlmInr(): { cold: number; warm: number } {
   return { cold: round2(cold), warm: round2(warm) };
 }
 
-function model() {
+export function model(): CostModel {
   const stt = SHAPE.stt_minutes * RATE.stt_sarvam_inr_min;
   const tts = (SHAPE.tts_seconds / 60) * RATE.tts_bulbul_inr_min;
   const live = liveLlmInr();
@@ -91,7 +98,7 @@ function model() {
   };
 }
 
-function renderSlide(m: ReturnType<typeof model>): string {
+function renderSlide(m: CostModel): string {
   const blended = round2(m.totals.missedcall_warm / SHAPE.stt_minutes);
   return `# Vaani-AI — Unit Economics (one slide)
 
@@ -140,7 +147,7 @@ Assumptions (tunable in \`SHAPE\`): ${SHAPE.live_turns} live turns × ${SHAPE.li
 `;
 }
 
-function renderConsole(m: ReturnType<typeof model>): string {
+function renderConsole(m: CostModel): string {
   const lines = [
     'Vaani-AI cost model',
     '─'.repeat(40),
@@ -165,7 +172,7 @@ console.log(renderConsole(m));
 // Write the slide unless --print-only. Guard the Deno API so the math stays
 // importable from non-Deno contexts.
 const anyDeno = (globalThis as any).Deno;
-if (anyDeno && !Deno.args.includes('--print-only')) {
+if (anyDeno && !(anyDeno.args ?? []).includes('--print-only')) {
   const path = new URL('../docs/unit-economics-slide.md', import.meta.url).pathname;
   await anyDeno.writeTextFile(path, renderSlide(m));
   console.log(`\nWrote ${path}`);
