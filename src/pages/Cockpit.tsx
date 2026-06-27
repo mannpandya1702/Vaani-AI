@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Routes, Route, NavLink } from 'react-router-dom';
 import * as Dialog from '@radix-ui/react-dialog';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -21,6 +21,15 @@ import {
   Pencil,
   Ban,
   ArrowUpRight,
+  Search,
+  MapPin,
+  Phone,
+  Calendar,
+  Pill,
+  HeartPulse,
+  AlertTriangle,
+  Baby,
+  Clock,
   X,
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
@@ -28,15 +37,15 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { icd10Title } from '@/lib/icd10-rural';
 
-const FN_BASE = import.meta.env.VITE_SUPABASE_URL + '/functions/v1';
-const FN_AUTH = `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`;
+export const FN_BASE = import.meta.env.VITE_SUPABASE_URL + '/functions/v1';
+export const FN_AUTH = `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`;
 
 /* ─────────────────────────────────────────────────────────── */
 /* Types                                                      */
 
-type TriageBand = 'RED' | 'AMBER' | 'GREEN';
+export type TriageBand = 'RED' | 'AMBER' | 'GREEN';
 
-interface CockpitRow {
+export interface CockpitRow {
   triage: {
     id: string;
     call_id: string;
@@ -128,6 +137,12 @@ export default function Cockpit() {
       <header className="border-b px-4 py-3 flex items-center gap-2 sticky top-0 bg-background/90 backdrop-blur z-40">
         <span className="vaani-bindi" />
         <span className="font-semibold">vaani · cockpit</span>
+        <NavLink
+          to="/clinic"
+          className="ml-3 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+        >
+          <LayoutGrid className="w-3.5 h-3.5" /> Clinic Dashboard
+        </NavLink>
         <DemoDisclosureChip />
       </header>
 
@@ -148,7 +163,7 @@ export default function Cockpit() {
 /* ─────────────────────────────────────────────────────────── */
 /* Anand-mandated AI · DEMO MODE chip                        */
 
-function DemoDisclosureChip() {
+export function DemoDisclosureChip() {
   return (
     <span
       className="ml-auto inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider rounded-md border bg-foreground/5 text-foreground/80 px-2 py-1"
@@ -198,7 +213,7 @@ function BottomNav() {
 /* ─────────────────────────────────────────────────────────── */
 /* The Triage Queue                                           */
 
-function useCockpitFeed() {
+export function useCockpitFeed() {
   return useQuery<{ rows: CockpitRow[]; fetched_at: string }>({
     queryKey: ['cockpit-feed'],
     queryFn: async () => {
@@ -292,7 +307,7 @@ function TriageQueue() {
   );
 }
 
-function BandPill({ band, count }: { band: TriageBand; count: number }) {
+export function BandPill({ band, count }: { band: TriageBand; count: number }) {
   const cls = bandClasses(band);
   return (
     <span className={cn('inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium border', cls.pill)}>
@@ -886,43 +901,278 @@ function SoapSection({ label, body }: { label: string; body: string }) {
 /* ─────────────────────────────────────────────────────────── */
 /* Patients · Notes · Me — render real data from cockpit-feed */
 
-function Patients() {
-  const { data } = useCockpitFeed();
-  const rows = data?.rows ?? [];
-  // Group by patient id (callers we've seen).
-  const byPatient = new Map<string, { id: string; ageSex: string; lang: string; calls: number; latestBand: TriageBand; latestAt: string }>();
+/** One patient, aggregated from all their encounters in the feed. */
+export interface PatientRecord {
+  id: string;
+  full_name: string | null;
+  phone_e164: string | null;
+  age_years: number | null;
+  sex: string | null;
+  village_name: string | null;
+  preferred_language: string;
+  pregnancy_status: string | null;
+  latestBand: TriageBand;
+  latestAt: string;
+  signed: boolean;          // latest encounter signed?
+  encounters: CockpitRow[]; // newest first
+}
+
+export function aggregatePatients(rows: CockpitRow[]): PatientRecord[] {
+  const byPatient = new Map<string, PatientRecord>();
   for (const r of rows) {
     if (!r.patient) continue;
     const key = r.patient.id;
     const prev = byPatient.get(key);
-    const ageSex = `${r.patient.sex ?? '?'} · ${r.patient.age_years ?? '?'}y`;
-    const lang = r.patient.preferred_language ?? '?';
     if (!prev) {
-      byPatient.set(key, { id: key, ageSex, lang, calls: 1, latestBand: r.triage.band, latestAt: r.triage.created_at });
+      byPatient.set(key, {
+        id: key,
+        full_name: r.patient.full_name,
+        phone_e164: r.patient.phone_e164,
+        age_years: r.patient.age_years,
+        sex: r.patient.sex,
+        village_name: r.patient.village_name,
+        preferred_language: r.patient.preferred_language ?? 'hi',
+        pregnancy_status: r.patient.pregnancy_status,
+        latestBand: r.triage.band,
+        latestAt: r.triage.created_at,
+        signed: !!r.soap?.mo_signed_at,
+        encounters: [r],
+      });
     } else {
-      prev.calls += 1;
-      if (r.triage.created_at > prev.latestAt) { prev.latestAt = r.triage.created_at; prev.latestBand = r.triage.band; }
+      prev.encounters.push(r);
+      // Backfill any demographic the newest row was missing.
+      prev.full_name ??= r.patient.full_name;
+      prev.age_years ??= r.patient.age_years;
+      prev.sex ??= r.patient.sex;
+      prev.village_name ??= r.patient.village_name;
+      prev.pregnancy_status ??= r.patient.pregnancy_status;
+      if (r.triage.created_at > prev.latestAt) {
+        prev.latestAt = r.triage.created_at;
+        prev.latestBand = r.triage.band;
+        prev.signed = !!r.soap?.mo_signed_at;
+      }
     }
   }
-  const list = Array.from(byPatient.values()).sort((a, b) => b.latestAt.localeCompare(a.latestAt));
+  for (const p of byPatient.values()) {
+    p.encounters.sort((a, b) => b.triage.created_at.localeCompare(a.triage.created_at));
+  }
+  return Array.from(byPatient.values()).sort((a, b) => b.latestAt.localeCompare(a.latestAt));
+}
+
+function Patients() {
+  const { data } = useCockpitFeed();
+  const rows = data?.rows ?? [];
+  const [query, setQuery] = useState('');
+  const [openId, setOpenId] = useState<string | null>(null);
+
+  const all = useMemo(() => aggregatePatients(rows), [rows]);
+  const list = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return all;
+    return all.filter((p) =>
+      (p.full_name ?? '').toLowerCase().includes(q) ||
+      (p.phone_e164 ?? '').toLowerCase().includes(q) ||
+      (p.village_name ?? '').toLowerCase().includes(q),
+    );
+  }, [all, query]);
+
+  const open = openId ? all.find((p) => p.id === openId) ?? null : null;
 
   return (
     <div className="container max-w-screen-md p-4">
-      <h2 className="text-2xl font-semibold tracking-tight mb-4">Patients</h2>
-      {list.length === 0 && <p className="text-sm text-muted-foreground">No patients yet — they'll appear after their first call.</p>}
+      <h2 className="text-2xl font-semibold tracking-tight mb-3">Patient Directory</h2>
+
+      <div className="relative mb-4">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search by name, phone, or village…"
+          className="w-full rounded-lg border bg-card pl-9 pr-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
+        />
+      </div>
+
+      {all.length === 0 && (
+        <p className="text-sm text-muted-foreground">No patients yet — they'll appear after their first call.</p>
+      )}
+      {all.length > 0 && list.length === 0 && (
+        <p className="text-sm text-muted-foreground">No patient matches "{query}".</p>
+      )}
+
       <ul className="space-y-2">
         {list.map((p) => (
-          <li key={p.id} className="rounded-lg border bg-card p-3 flex items-center gap-3">
-            <div className="w-1.5 self-stretch rounded-full" style={{ background: bandClasses(p.latestBand).dot.replace('bg-', '') }} />
-            <div className="flex-1 min-w-0">
-              <div className="text-sm font-medium">{p.ageSex} · {p.lang.toUpperCase()}</div>
-              <div className="text-xs text-muted-foreground">{p.calls} call{p.calls === 1 ? '' : 's'} · last {timeAgo(p.latestAt)}</div>
-            </div>
-            <BandPill band={p.latestBand} count={1} />
+          <li key={p.id}>
+            <button
+              onClick={() => setOpenId(p.id)}
+              className="w-full text-left rounded-xl border bg-card p-3 flex items-start gap-3 transition hover:shadow-md hover:scale-[1.005]"
+            >
+              <div className={cn('w-1.5 self-stretch rounded-full', bandClasses(p.latestBand).dot)} />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold truncate">{p.full_name?.trim() || 'Unknown patient'}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {p.sex ?? '?'} · {p.age_years != null ? `${p.age_years}y` : '—'}
+                  </span>
+                  <span className="ml-auto"><BandPill band={p.latestBand} count={p.encounters.length} /></span>
+                </div>
+                <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+                  {p.phone_e164 && <span className="inline-flex items-center gap-1"><Phone className="w-3 h-3" />{p.phone_e164}</span>}
+                  {p.village_name && <span className="inline-flex items-center gap-1"><MapPin className="w-3 h-3" />{p.village_name}</span>}
+                  <span className="inline-flex items-center gap-1"><Clock className="w-3 h-3" />last visit {timeAgo(p.latestAt)}</span>
+                  <span className={cn('inline-flex items-center gap-1', p.signed ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400')}>
+                    {p.signed ? <CheckCircle2 className="w-3 h-3" /> : <Clock className="w-3 h-3" />}
+                    {p.signed ? 'Signed' : 'Awaiting sign-off'}
+                  </span>
+                </div>
+              </div>
+            </button>
           </li>
         ))}
       </ul>
+
+      <PatientProfileDialog patient={open} onClose={() => setOpenId(null)} />
     </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────── */
+/* Patient profile — full history view                         */
+
+function ProfileField({ label, value, icon: Icon }: { label: string; value: string | null | undefined; icon?: typeof Phone }) {
+  return (
+    <div>
+      <div className="text-[11px] uppercase tracking-wider text-muted-foreground">{label}</div>
+      <div className="text-sm font-medium flex items-center gap-1.5">
+        {Icon && <Icon className="w-3.5 h-3.5 text-muted-foreground" />}
+        {value?.toString().trim() || <span className="text-muted-foreground font-normal">—</span>}
+      </div>
+    </div>
+  );
+}
+
+function EmptyState({ children }: { children: ReactNode }) {
+  return (
+    <div className="rounded-lg border border-dashed bg-muted/30 p-3 text-xs text-muted-foreground">
+      {children}
+    </div>
+  );
+}
+
+function PatientProfileDialog({ patient, onClose }: { patient: PatientRecord | null; onClose: () => void }) {
+  if (!patient) return null;
+  const p = patient;
+  const signedSoaps = p.encounters.filter((e) => e.soap?.mo_signed_at);
+  // Previous medications: MO-only drug hints across all this patient's notes (cockpit is RMP-facing).
+  const meds = Array.from(new Set(
+    p.encounters.flatMap((e) => e.soap?.mo_only_drug_hints ?? []),
+  ));
+  const tb = p.encounters.some((e) =>
+    (e.triage.presumptive_label ?? '').includes('tb') ||
+    (e.soap?.icd10_codes ?? []).some((c) => c.toUpperCase().startsWith('A15') || c.toUpperCase().startsWith('A16')),
+  );
+
+  return (
+    <Dialog.Root open={!!patient} onOpenChange={(v) => !v && onClose()}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 bg-black/50 z-[60] backdrop-blur-sm" />
+        <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[70] w-[95vw] max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl border bg-card p-0 shadow-2xl">
+          <div className="sticky top-0 bg-card/95 backdrop-blur border-b px-5 py-3 flex items-center gap-3">
+            <UserIcon className="w-4 h-4 text-muted-foreground" />
+            <div className="flex-1">
+              <Dialog.Title className="text-lg font-semibold leading-tight">{p.full_name?.trim() || 'Unknown patient'}</Dialog.Title>
+              <Dialog.Description className="text-xs text-muted-foreground">
+                {p.encounters.length} visit{p.encounters.length === 1 ? '' : 's'} · last {timeAgo(p.latestAt)}
+              </Dialog.Description>
+            </div>
+            <BandPill band={p.latestBand} count={p.encounters.length} />
+            <Dialog.Close className="rounded-md p-1 hover:bg-secondary/60"><X className="w-4 h-4" /></Dialog.Close>
+          </div>
+
+          <div className="p-5 space-y-5">
+            {/* Demographics */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              <ProfileField label="Age" value={p.age_years != null ? `${p.age_years} years` : null} />
+              <ProfileField label="Gender" value={p.sex} />
+              <ProfileField label="Language" value={p.preferred_language?.toUpperCase()} />
+              <ProfileField label="Mobile" value={p.phone_e164} icon={Phone} />
+              <ProfileField label="Village" value={p.village_name} icon={MapPin} />
+              <ProfileField label="Pregnancy" value={p.pregnancy_status && p.pregnancy_status !== 'not_pregnant' ? p.pregnancy_status : null} icon={Baby} />
+            </div>
+
+            {/* Clinical flags (TB / chronic / allergies) — empty states where unmodelled */}
+            <div className="grid sm:grid-cols-2 gap-3">
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1 flex items-center gap-1.5"><AlertTriangle className="w-3.5 h-3.5" /> Allergies</div>
+                <EmptyState>Not recorded yet — the intake agent will capture allergies as history builds.</EmptyState>
+              </div>
+              <div>
+                <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1 flex items-center gap-1.5"><HeartPulse className="w-3.5 h-3.5" /> Chronic diseases</div>
+                <EmptyState>Not recorded yet.</EmptyState>
+              </div>
+            </div>
+
+            {/* TB / pregnancy status chips */}
+            {(tb || (p.pregnancy_status && p.pregnancy_status !== 'not_pregnant')) && (
+              <div className="flex flex-wrap gap-2 text-xs">
+                {tb && <span className="rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-300 px-2 py-0.5">TB workup on record</span>}
+                {p.pregnancy_status && p.pregnancy_status !== 'not_pregnant' && (
+                  <span className="rounded-full bg-pink-500/15 text-pink-700 dark:text-pink-300 px-2 py-0.5">{p.pregnancy_status}</span>
+                )}
+              </div>
+            )}
+
+            {/* Previous medications */}
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1 flex items-center gap-1.5"><Pill className="w-3.5 h-3.5" /> Previous medications (MO-only)</div>
+              {meds.length > 0 ? (
+                <ul className="text-sm space-y-1">{meds.map((m, i) => <li key={i} className="font-mono text-xs">• {m}</li>)}</ul>
+              ) : (
+                <EmptyState>No medication hints recorded across previous notes.</EmptyState>
+              )}
+            </div>
+
+            {/* Visit timeline */}
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2 flex items-center gap-1.5"><Calendar className="w-3.5 h-3.5" /> Timeline of visits</div>
+              <ol className="relative border-l ml-1.5 space-y-3">
+                {p.encounters.map((e) => (
+                  <li key={e.triage.id} className="ml-4">
+                    <span className={cn('absolute -left-[5px] mt-1.5 w-2.5 h-2.5 rounded-full', bandClasses(e.triage.band).dot)} />
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className={cn('text-xs font-semibold uppercase', bandClasses(e.triage.band).text)}>{e.triage.band}</span>
+                      <span className="text-sm font-medium">{e.triage.presumptive_label.replace(/_/g, ' ')}</span>
+                      <span className="text-xs text-muted-foreground">{new Date(e.triage.created_at).toLocaleString()}</span>
+                      {e.soap?.mo_signed_at && <span className="text-[11px] text-emerald-600 dark:text-emerald-400 inline-flex items-center gap-0.5"><CheckCircle2 className="w-3 h-3" />signed</span>}
+                    </div>
+                    {(e.triage.summary_en || e.triage.reasoning) && (
+                      <div className="text-xs text-muted-foreground line-clamp-2">{e.triage.summary_en || e.triage.reasoning}</div>
+                    )}
+                  </li>
+                ))}
+              </ol>
+            </div>
+
+            {/* Previous SOAP records */}
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2 flex items-center gap-1.5"><FileText className="w-3.5 h-3.5" /> Previous SOAP records</div>
+              {signedSoaps.length > 0 ? (
+                <div className="space-y-3">
+                  {signedSoaps.map((e) => (
+                    <div key={e.triage.id} className="rounded-lg border bg-muted/20 p-3 space-y-2">
+                      <div className="text-xs text-muted-foreground">{new Date(e.soap!.mo_signed_at!).toLocaleDateString()} · {e.soap!.presumptive_screening_label.replace(/_/g, ' ')}</div>
+                      <SoapSection label="A — Assessment" body={e.soap!.assessment} />
+                      <SoapSection label="P — Plan" body={e.soap!.plan} />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <EmptyState>No signed SOAP records yet for this patient.</EmptyState>
+              )}
+            </div>
+          </div>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
   );
 }
 
@@ -995,7 +1245,7 @@ function Stat({ label, value }: { label: string; value: number }) {
 /* ─────────────────────────────────────────────────────────── */
 /* Helpers                                                    */
 
-function bandClasses(band: TriageBand) {
+export function bandClasses(band: TriageBand) {
   switch (band) {
     case 'RED':
       return {
@@ -1022,7 +1272,7 @@ function bandClasses(band: TriageBand) {
   }
 }
 
-function timeAgo(iso: string): string {
+export function timeAgo(iso: string): string {
   const sec = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
   if (sec < 60) return `${sec}s ago`;
   if (sec < 3600) return `${Math.floor(sec / 60)}m ago`;
