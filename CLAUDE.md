@@ -81,7 +81,7 @@ Caller opens https://app.vaani.ai/asha (web) OR dials Exotel toll-free (PSTN)
       transcriber.provider = custom-transcriber → /functions/v1/sarvam-stt-bridge
       voice.provider       = custom-voice       → /functions/v1/sarvam-tts-bridge
       model.provider       = custom-llm         → /functions/v1/vapi-custom-llm
-      tools                = capture_consent, escalate_to_doctor
+      tools                = capture_consent, escalate_to_doctor, end_call
     → /functions/v1/sarvam-stt-bridge
         forwards raw mic audio to Sarvam Saarika v2 (ap-south-1)
         returns text + word-level timestamps to VAPI
