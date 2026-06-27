@@ -12,16 +12,23 @@
 --   - red flags deterministically raise urgency (safety override)
 -- ═══════════════════════════════════════════════════════════════════
 
-create type shadow_urgency as enum ('Routine', 'Urgent', 'Emergency');
+-- Idempotent type creation (Postgres has no `create type if not exists`).
+do $$ begin
+  create type shadow_urgency as enum ('Routine', 'Urgent', 'Emergency');
+exception when duplicate_object then null; end $$;
 
 -- What the doctor did with the AI opinion at the cockpit.
-create type shadow_doctor_action as enum ('pending', 'ignored', 'accepted', 'edited');
+do $$ begin
+  create type shadow_doctor_action as enum ('pending', 'ignored', 'accepted', 'edited');
+exception when duplicate_object then null; end $$;
 
 create table if not exists shadow_diagnoses (
   id                       uuid primary key default gen_random_uuid(),
   call_id                  uuid not null unique references calls(id) on delete cascade,
   soap_note_id             uuid references soap_notes(id) on delete cascade,
-  triage_decision_id       uuid references triage_decisions(id),
+  -- set null (not cascade): keep the AI opinion row even if the triage row is
+  -- pruned independently (eval cleanup deletes triage_decisions before calls).
+  triage_decision_id       uuid references triage_decisions(id) on delete set null,
   patient_id               uuid not null references patients(id),
   tenant_id                uuid not null references tenants(id),
 
@@ -82,6 +89,7 @@ begin
 end;
 $$ language plpgsql;
 
-create trigger trg_shadow_updated_at
+-- create or replace (PG14+) so a re-run does not error on the trigger.
+create or replace trigger trg_shadow_updated_at
   before update on shadow_diagnoses
   for each row execute function set_shadow_updated_at();
