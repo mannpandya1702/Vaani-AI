@@ -39,6 +39,7 @@ const SYSTEM_PROMPT = `You are Vaani-AI's SOAP-note drafter for a named Register
 10. mo_only_drug_hints: 0-5 items as plain strings like "Paracetamol 500mg BD x3d if T>38°C". Empty list is fine.
 11. follow_up_channel: one of voice|whatsapp|sms — pick the most appropriate given triage band + patient profile.
 12. If you don't have enough information for a field, use "" or [] rather than fabricating. Never invent a vital sign.
+13. patient_callback_message: the spoken message Vaani reads ALOUD to the patient on the phone callback, IN THE PATIENT'S preferred_language (Devanagari for hi, Tamil script for ta — NEVER English, NEVER digits). 2-3 short, plain spoken sentences a villager understands: what the doctor advises them to do, and what to watch for. NO drug names, NO "diagnosis"/presumptive labels, NO English medical jargon, NO ICD codes. This is the ONLY clinical content the patient hears; it is spoken BETWEEN "the doctor has seen your report" and "rest well, we are with you", so do NOT repeat those framings. If you are unsure, keep it to a simple reassurance to follow the doctor's callback. This is the patient-language twin of the English Plan — same advice, spoken warmly in their tongue.
 </rules>
 
 <icd10_catalogue>
@@ -78,6 +79,7 @@ const SOAP_TOOL = {
       objective: { type: 'string', description: 'Observed facts (vitals if available, exam findings reported by ASHA, screening results)' },
       assessment: { type: 'string', description: 'Clinical assessment with protocol citations' },
       plan: { type: 'string', description: 'Patient-facing plan (NO drug names). Ends with callback promise.' },
+      patient_callback_message: { type: 'string', description: "Spoken callback for the patient in THEIR language (hi=Devanagari, ta=Tamil — NEVER English, NEVER digits). 2-3 plain warm sentences: the doctor's advice + what to watch for. NO drug names, NO 'diagnosis', no English jargon, no ICD codes. The patient-language twin of Plan." },
       presumptive_screening_label: { type: 'string' },
       differential_list: {
         type: 'array',
@@ -299,6 +301,9 @@ Deno.serve(async (req) => {
       original_text: JSON.stringify(soap),
       follow_up_channel: soap.follow_up_channel ?? null,
       investigations_advised: Array.isArray(soap.investigations_advised) ? soap.investigations_advised : [],
+      patient_callback_message: typeof soap.patient_callback_message === 'string' && soap.patient_callback_message.trim()
+        ? soap.patient_callback_message.trim()
+        : null,
     })
     .select('id')
     .single();
