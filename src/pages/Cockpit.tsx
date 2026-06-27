@@ -72,6 +72,8 @@ interface CockpitRow {
   };
   patient: null | {
     id: string;
+    full_name: string | null;
+    phone_e164: string | null;
     age_years: number | null;
     sex: string | null;
     preferred_language: string;
@@ -217,7 +219,16 @@ function TriageQueue() {
         <div className="rounded-xl border bg-card p-12 text-center text-muted-foreground">
           <Mic className="w-8 h-8 mx-auto mb-2 opacity-30" />
           No triage in the queue.
-          <div className="mt-2 text-sm">Dial Vaani to see a card land here.</div>
+          <div className="mt-2 text-sm">Start a screening — a card lands here ~10s after the call ends.</div>
+          <a
+            href="/asha"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-primary text-primary-foreground px-4 py-2 text-sm font-medium hover:opacity-90"
+          >
+            <Mic className="w-4 h-4" /> Start a test screening ↗
+          </a>
+          <div className="mt-2 text-[11px]">opens the patient screening in a new tab — keep this cockpit open to watch the card arrive</div>
         </div>
       )}
 
@@ -305,6 +316,19 @@ function TriageCard({ row, onClick }: { row: CockpitRow; onClick: () => void }) 
                 <CheckCircle2 className="w-3.5 h-3.5" />
                 Signed
               </span>
+            )}
+          </div>
+
+          {/* Who called — name + number (backfilled from the screening) */}
+          <div className="mt-0.5 text-xs text-muted-foreground flex items-center gap-1.5 truncate">
+            <span className="font-medium text-foreground/70">
+              {row.patient?.full_name?.trim() || 'Unknown caller'}
+            </span>
+            {row.patient?.phone_e164 && (
+              <>
+                <span>·</span>
+                <span className="font-mono">{row.patient.phone_e164}</span>
+              </>
             )}
           </div>
 

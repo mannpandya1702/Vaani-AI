@@ -77,6 +77,12 @@ const SOAP_TOOL = {
       patient_callback_eta_min: { type: 'integer', minimum: 5, maximum: 720 },
       follow_up_channel: { type: 'string', enum: ['voice', 'whatsapp', 'sms'] },
       investigations_advised: { type: 'array', items: { type: 'string' } },
+      // Demographics extracted FROM THE TRANSCRIPT (the patient stated them
+      // during the demographic gate). Used to backfill the anonymous patient
+      // row. Emit Unknown / omit if the patient never stated it — never guess.
+      patient_age_years: { type: 'integer', minimum: 0, maximum: 120, description: 'Age the patient stated, else omit' },
+      patient_sex: { type: 'string', enum: ['M', 'F', 'Other', 'Unknown'], description: 'Sex the patient stated/implied, else Unknown' },
+      patient_pregnancy_status: { type: 'string', enum: ['not_pregnant', 'pregnant', 'postpartum', 'unknown'], description: 'Only if discussed, else unknown' },
     },
     required: [
       'subjective', 'objective', 'assessment', 'plan',
@@ -244,6 +250,31 @@ Deno.serve(async (req) => {
     .single();
 
   if (insertErr) return jsonErr(500, 'insert_failed', insertErr.message);
+
+  // ── Backfill patient demographics from the transcript ──────────
+  // Web/PSTN callers start as anonymous rows (age/sex null). The agent
+  // captures age/sex/pregnancy in the demographic gate; Claude extracted
+  // them above. Fill ONLY currently-null fields so we never overwrite a
+  // real pre-existing record. This is why the cockpit showed no age/sex.
+  if (call.patient_id) {
+    const demoUpdate: Record<string, unknown> = {};
+    const exAge = soap.patient_age_years;
+    if (patient?.age_years == null && typeof exAge === 'number' && exAge > 0 && exAge <= 120) {
+      demoUpdate.age_years = Math.round(exAge);
+    }
+    const exSex = soap.patient_sex;
+    if (patient?.sex == null && typeof exSex === 'string' && ['M', 'F', 'Other'].includes(exSex)) {
+      demoUpdate.sex = exSex;
+    }
+    const exPreg = soap.patient_pregnancy_status;
+    if (patient?.pregnancy_status == null && typeof exPreg === 'string' && ['not_pregnant', 'pregnant', 'postpartum'].includes(exPreg)) {
+      demoUpdate.pregnancy_status = exPreg;
+    }
+    if (Object.keys(demoUpdate).length > 0) {
+      await sb.from('patients').update(demoUpdate).eq('id', call.patient_id)
+        .then(() => {}, (e: any) => console.error('[soap-generate] patient demo backfill', e));
+    }
+  }
 
   return new Response(JSON.stringify({
     soap_id: inserted.id,

@@ -60,7 +60,7 @@ Deno.serve(async (req) => {
       .select('id, started_at, ended_at, channel, lang_detected')
       .in('id', callIds),
     sb.from('patients')
-      .select('id, age_years, sex, preferred_language, pregnancy_status, village_name')
+      .select('id, full_name, phone_e164, age_years, sex, preferred_language, pregnancy_status, village_name')
       .in('id', patientIds),
   ]);
 
