@@ -13,11 +13,13 @@ import {
   Languages,
   Mic,
   Stethoscope,
+  ListOrdered,
   X,
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { icd10Title } from '@/lib/icd10-rural';
 
 const FN_BASE = import.meta.env.VITE_SUPABASE_URL + '/functions/v1';
 const FN_AUTH = `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`;
@@ -54,7 +56,12 @@ interface CockpitRow {
     assessment: string;
     plan: string;
     presumptive_screening_label: string;
-    differential_list: any[];
+    differential_list: Array<{
+      label: string;
+      likelihood?: 'high' | 'medium' | 'low';
+      confidence?: number;
+      rationale?: string;
+    }>;
     icd10_codes: string[];
     icd11_codes: string[];
     mo_only_drug_hints: string[] | null;
@@ -484,27 +491,60 @@ function SoapReviewDialog({
                 )}
 
                 {row.soap.differential_list?.length > 0 && (
-                  <div>
-                    <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
-                      Differential
+                  <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3">
+                    <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-300 mb-2">
+                      <ListOrdered className="w-3.5 h-3.5" />
+                      AI-suggested differential · ranked · MO-only · NOT shared with patient
                     </div>
-                    <ul className="text-sm space-y-1">
-                      {row.soap.differential_list.map((d: any, i: number) => (
-                        <li key={i} className="flex gap-2">
-                          <span className="text-muted-foreground">{d.likelihood}</span>
-                          <span className="font-medium">{d.label}</span>
-                          {d.rationale && <span className="text-muted-foreground">— {d.rationale}</span>}
+                    <ol className="text-sm space-y-1.5">
+                      {row.soap.differential_list.map((d, i) => (
+                        <li key={i} className="flex items-start gap-2">
+                          <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-500/20 text-[11px] font-semibold text-amber-700 dark:text-amber-300">
+                            {i + 1}
+                          </span>
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-medium">{d.label}</span>
+                              {d.likelihood && (
+                                <span className={cn(
+                                  'rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide',
+                                  d.likelihood === 'high' && 'bg-red-500/15 text-red-600 dark:text-red-300',
+                                  d.likelihood === 'medium' && 'bg-amber-500/15 text-amber-700 dark:text-amber-300',
+                                  d.likelihood === 'low' && 'bg-secondary text-muted-foreground',
+                                )}>
+                                  {d.likelihood}
+                                </span>
+                              )}
+                              {typeof d.confidence === 'number' && (
+                                <span className="font-mono text-[11px] text-muted-foreground">
+                                  {(d.confidence * 100).toFixed(0)}%
+                                </span>
+                              )}
+                            </div>
+                            {d.rationale && (
+                              <div className="text-xs text-muted-foreground">{d.rationale}</div>
+                            )}
+                          </div>
                         </li>
                       ))}
-                    </ul>
+                    </ol>
                   </div>
                 )}
 
                 {(row.soap.icd10_codes?.length || row.soap.icd11_codes?.length) && (
                   <div className="flex flex-wrap items-center gap-2 text-xs">
-                    {row.soap.icd10_codes?.map((c) => (
-                      <span key={`a${c}`} className="rounded-md border bg-secondary/30 px-2 py-0.5">ICD-10 {c}</span>
-                    ))}
+                    {row.soap.icd10_codes?.map((c) => {
+                      const title = icd10Title(c);
+                      return (
+                        <span
+                          key={`a${c}`}
+                          title={title ?? undefined}
+                          className="rounded-md border bg-secondary/30 px-2 py-0.5"
+                        >
+                          ICD-10 {c}{title ? ` — ${title}` : ''}
+                        </span>
+                      );
+                    })}
                     {row.soap.icd11_codes?.map((c) => (
                       <span key={`b${c}`} className="rounded-md border bg-secondary/30 px-2 py-0.5">ICD-11 {c}</span>
                     ))}
