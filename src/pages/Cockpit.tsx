@@ -32,7 +32,7 @@ import {
   Clock,
   X,
 } from 'lucide-react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { icd10Title } from '@/lib/icd10-rural';
@@ -238,9 +238,20 @@ export function useCockpitFeed() {
   });
 }
 
+// Lightweight client-side workflow tags layered on top of the queue. These let
+// the doctor TRIAGE the list quickly without opening every card. The canonical
+// save (Approve & Sign in the review dialog) is unchanged; 'approve' here calls
+// the same soap-sign endpoint.
+type WorkflowTag = 'needs_review' | 'refer';
+type QueueFilter = 'all' | 'awaiting' | 'needs_review' | 'refer' | 'signed';
+
 function TriageQueue() {
   const { data, isLoading, error } = useCockpitFeed();
+  const qc = useQueryClient();
   const [openRow, setOpenRow] = useState<CockpitRow | null>(null);
+  const [tags, setTags] = useState<Record<string, WorkflowTag>>({});
+  const [filter, setFilter] = useState<QueueFilter>('all');
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   const rows = data?.rows ?? [];
   const counts = useMemo(() => {
@@ -248,6 +259,67 @@ function TriageQueue() {
     for (const r of rows) c[r.triage.band] += 1;
     return c;
   }, [rows]);
+
+  const segCounts = useMemo(() => {
+    const c = { all: rows.length, awaiting: 0, needs_review: 0, refer: 0, signed: 0 };
+    for (const r of rows) {
+      const signed = !!r.soap?.mo_signed_at;
+      const tag = tags[r.triage.id];
+      if (signed) c.signed++;
+      else if (tag === 'needs_review') c.needs_review++;
+      else if (tag === 'refer') c.refer++;
+      else c.awaiting++;
+    }
+    return c;
+  }, [rows, tags]);
+
+  const visible = rows.filter((r) => {
+    const signed = !!r.soap?.mo_signed_at;
+    const tag = tags[r.triage.id];
+    switch (filter) {
+      case 'signed': return signed;
+      case 'needs_review': return !signed && tag === 'needs_review';
+      case 'refer': return !signed && tag === 'refer';
+      case 'awaiting': return !signed && !tag;
+      default: return true;
+    }
+  });
+
+  async function quickApprove(row: CockpitRow) {
+    if (!row.soap || row.soap.mo_signed_at || busyId) return;
+    setBusyId(row.triage.id);
+    try {
+      const r = await fetch(`${FN_BASE}/soap-sign`, {
+        method: 'POST',
+        headers: { Authorization: FN_AUTH, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ soap_id: row.soap.id }),
+      });
+      const b = await r.json();
+      if (!r.ok) throw new Error(b?.error ?? `HTTP ${r.status}`);
+      toast.success('Approved & signed — patient callback dispatched.');
+      setTags((t) => { const n = { ...t }; delete n[row.triage.id]; return n; });
+      qc.invalidateQueries({ queryKey: ['cockpit-feed'] });
+    } catch (e: any) {
+      toast.error(e?.message ?? 'Could not sign');
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  function tagRow(row: CockpitRow, tag: WorkflowTag) {
+    setTags((t) => ({ ...t, [row.triage.id]: tag }));
+    toast(tag === 'needs_review' ? 'Flagged for review' : 'Marked for referral', {
+      description: 'Queue-management tag (this session). Open the card to review & sign.',
+    });
+  }
+
+  const SEGMENTS: { key: QueueFilter; label: string }[] = [
+    { key: 'all', label: 'All' },
+    { key: 'awaiting', label: 'Awaiting' },
+    { key: 'needs_review', label: 'Needs review' },
+    { key: 'refer', label: 'Refer' },
+    { key: 'signed', label: 'Signed' },
+  ];
 
   return (
     <div className="container max-w-screen-md p-4 space-y-4">
@@ -258,6 +330,22 @@ function TriageQueue() {
           <BandPill band="AMBER" count={counts.AMBER} />
           <BandPill band="GREEN" count={counts.GREEN} />
         </div>
+      </div>
+
+      {/* Workflow-state filter */}
+      <div className="flex items-center gap-1.5 overflow-x-auto -mx-1 px-1 pb-1">
+        {SEGMENTS.map((s) => (
+          <button
+            key={s.key}
+            onClick={() => setFilter(s.key)}
+            className={cn(
+              'shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition',
+              filter === s.key ? 'bg-primary text-primary-foreground border-primary' : 'hover:bg-secondary/60',
+            )}
+          >
+            {s.label} <span className="opacity-60">{segCounts[s.key]}</span>
+          </button>
+        ))}
       </div>
 
       {isLoading && <SkeletonStack />}
@@ -284,8 +372,14 @@ function TriageQueue() {
         </div>
       )}
 
+      {!isLoading && !error && rows.length > 0 && visible.length === 0 && (
+        <div className="rounded-xl border bg-card p-8 text-center text-sm text-muted-foreground">
+          Nothing in "{SEGMENTS.find((s) => s.key === filter)?.label}".
+        </div>
+      )}
+
       <AnimatePresence>
-        {rows.map((row) => (
+        {visible.map((row) => (
           <motion.div
             key={row.triage.id}
             layout
@@ -293,7 +387,14 @@ function TriageQueue() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, scale: 0.96 }}
           >
-            <TriageCard row={row} onClick={() => setOpenRow(row)} />
+            <TriageCard
+              row={row}
+              onClick={() => setOpenRow(row)}
+              tag={tags[row.triage.id] ?? null}
+              busy={busyId === row.triage.id}
+              onApprove={() => quickApprove(row)}
+              onTag={(t) => tagRow(row, t)}
+            />
           </motion.div>
         ))}
       </AnimatePresence>
@@ -330,20 +431,26 @@ function SkeletonStack() {
 /* ─────────────────────────────────────────────────────────── */
 /* Triage Card                                                */
 
-function TriageCard({ row, onClick }: { row: CockpitRow; onClick: () => void }) {
+function TriageCard({ row, onClick, tag = null, busy = false, onApprove, onTag }: {
+  row: CockpitRow;
+  onClick: () => void;
+  tag?: WorkflowTag | null;
+  busy?: boolean;
+  onApprove?: () => void;
+  onTag?: (t: WorkflowTag) => void;
+}) {
   const cls = bandClasses(row.triage.band);
   const isRed = row.triage.band === 'RED';
   const isSigned = !!row.soap?.mo_signed_at;
   const reds = row.triage.red_flag_categories ?? [];
   const lang = row.patient?.preferred_language ?? row.call?.lang_detected ?? 'hi';
   const age = row.patient?.age_years;
+  const hasSoap = !!row.soap;
 
   return (
-    <button
-      onClick={onClick}
-      aria-label={`${row.triage.band} ${row.triage.presumptive_label.replace(/_/g, ' ')}${isSigned ? ', signed' : ', awaiting sign-off'}`}
+    <div
       className={cn(
-        'w-full text-left rounded-xl border bg-card p-4 transition shadow-sm hover:shadow-md hover:scale-[1.005]',
+        'rounded-xl border bg-card transition shadow-sm hover:shadow-md',
         cls.cardBorder,
         // Audit §4: pulse only RED + unsigned. Honor prefers-reduced-motion.
         isRed && !isSigned && 'ring-2 ring-red-500/40 motion-safe:animate-pulse',
@@ -352,6 +459,11 @@ function TriageCard({ row, onClick }: { row: CockpitRow; onClick: () => void }) 
         isSigned && 'opacity-70',
       )}
     >
+      <button
+        onClick={onClick}
+        aria-label={`${row.triage.band} ${row.triage.presumptive_label.replace(/_/g, ' ')}${isSigned ? ', signed' : ', awaiting sign-off'}. Open to review.`}
+        className="w-full text-left p-4 hover:scale-[1.005] transition"
+      >
       <div className="flex items-start gap-3">
         <div className={cn('w-2 self-stretch rounded-full', cls.dot)} />
         <div className="flex-1 min-w-0">
@@ -409,7 +521,46 @@ function TriageCard({ row, onClick }: { row: CockpitRow; onClick: () => void }) 
           </div>
         </div>
       </div>
-    </button>
+      </button>
+
+      {/* Quick inline actions (queue management) — the full review + sign
+          stays in the dialog; 'Approve' here calls the same soap-sign. */}
+      {!isSigned && (
+        <div className="flex items-center gap-1.5 border-t px-3 py-2">
+          <button
+            onClick={onApprove}
+            disabled={!hasSoap || busy}
+            title={hasSoap ? 'Approve & sign — dispatches the patient callback' : 'SOAP not drafted yet'}
+            className="inline-flex items-center gap-1 rounded-md bg-emerald-600 text-white px-2.5 py-1 text-xs font-medium hover:bg-emerald-700 disabled:opacity-40"
+          >
+            <Check className="w-3.5 h-3.5" /> {busy ? 'Signing…' : 'Approve'}
+          </button>
+          <button
+            onClick={() => onTag?.('needs_review')}
+            className={cn(
+              'inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs hover:bg-secondary/60',
+              tag === 'needs_review' && 'border-amber-500/60 text-amber-700 dark:text-amber-300 bg-amber-500/5',
+            )}
+          >
+            <AlertCircle className="w-3.5 h-3.5" /> Needs review
+          </button>
+          <button
+            onClick={() => onTag?.('refer')}
+            className={cn(
+              'inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs hover:bg-secondary/60',
+              tag === 'refer' && 'border-indigo-500/60 text-indigo-700 dark:text-indigo-300 bg-indigo-500/5',
+            )}
+          >
+            <ArrowUpRight className="w-3.5 h-3.5" /> Refer
+          </button>
+          {tag && (
+            <span className="ml-auto text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              {tag === 'needs_review' ? 'flagged' : 'referral'}
+            </span>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
