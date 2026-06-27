@@ -49,10 +49,23 @@ import { checkRefusal, scriptForLang } from '../_shared/refusal-scripts.ts';
 const ANTHROPIC_KEY = Deno.env.get('ANTHROPIC_API_KEY') ?? '';
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 
+interface OpenAIToolCall {
+  id: string;
+  type: 'function';
+  function: { name: string; arguments: string };
+}
+
 interface OpenAIMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
   content: string | unknown;
   name?: string;
+  tool_calls?: OpenAIToolCall[];
+  tool_call_id?: string;
+}
+
+interface OpenAITool {
+  type: 'function';
+  function: { name: string; description?: string; parameters?: unknown };
 }
 
 interface OpenAIRequest {
@@ -61,8 +74,29 @@ interface OpenAIRequest {
   max_tokens?: number;
   temperature?: number;
   stream?: boolean;
+  // VAPI forwards the assistant's tools so the model can call
+  // capture_consent / escalate_to_doctor. We MUST translate these to
+  // Anthropic's tool format or Claude verbalises the call as text.
+  tools?: OpenAITool[];
+  tool_choice?: unknown;
   // VAPI passes its call object inline so we can correlate
   call?: { id?: string };
+}
+
+// OpenAI function tools → Anthropic tools.
+function toAnthropicTools(tools?: OpenAITool[]) {
+  if (!Array.isArray(tools) || tools.length === 0) return undefined;
+  return tools
+    .filter((t) => t?.function?.name)
+    .map((t) => ({
+      name: t.function.name,
+      description: t.function.description ?? '',
+      input_schema: (t.function.parameters as Record<string, unknown>) ?? { type: 'object', properties: {} },
+    }));
+}
+
+function safeParse(s: string): Record<string, unknown> {
+  try { return JSON.parse(s); } catch { return {}; }
 }
 
 Deno.serve(async (req) => {
@@ -125,18 +159,45 @@ Deno.serve(async (req) => {
     }
   }
 
-  // ── STEP 2: PII-redact everything before Claude ─────────────
-  // We redact each non-system message (system is our static prompt).
+  // ── STEP 2: PII-redact + build Anthropic messages (tool-aware) ──
+  // system is our static prompt (never PII). Each turn is redacted, and
+  // tool_use / tool_result blocks are preserved so the model can actually
+  // CALL capture_consent / escalate_to_doctor instead of speaking the call.
   const systemPrompt = String(body.messages.find((m) => m.role === 'system')?.content ?? '');
   const dialogue = body.messages.filter((m) => m.role !== 'system');
   let sessionToken: string | null = null;
-  const redactedDialogue = await Promise.all(dialogue.map(async (m) => {
-    const text = typeof m.content === 'string' ? m.content : '';
-    if (!text) return { role: m.role, content: '' };
+  const redact = async (text: string): Promise<string> => {
+    if (!text) return '';
     const { redactedText, sessionToken: tok } = await redactPII(text, dbCallId, {});
     if (!sessionToken) sessionToken = tok;
-    return { role: m.role, content: redactedText };
-  }));
+    return redactedText;
+  };
+
+  const anthropicMessages: { role: 'user' | 'assistant'; content: unknown }[] = [];
+  for (const m of dialogue) {
+    if (m.role === 'assistant') {
+      const blocks: unknown[] = [];
+      const text = typeof m.content === 'string' ? m.content : '';
+      if (text) blocks.push({ type: 'text', text: await redact(text) });
+      for (const tc of m.tool_calls ?? []) {
+        blocks.push({
+          type: 'tool_use',
+          id: tc.id,
+          name: tc.function?.name,
+          input: safeParse(await redact(tc.function?.arguments ?? '{}')),
+        });
+      }
+      anthropicMessages.push({ role: 'assistant', content: blocks.length ? blocks : '' });
+    } else if (m.role === 'tool') {
+      const text = typeof m.content === 'string' ? m.content : JSON.stringify(m.content ?? '');
+      anthropicMessages.push({
+        role: 'user',
+        content: [{ type: 'tool_result', tool_use_id: m.tool_call_id ?? '', content: await redact(text) }],
+      });
+    } else {
+      anthropicMessages.push({ role: 'user', content: await redact(typeof m.content === 'string' ? m.content : '') });
+    }
+  }
 
   // ── STEP 3: cross_border_transfers audit log ────────────────
   await sb.from('cross_border_transfers').insert({
@@ -145,12 +206,13 @@ Deno.serve(async (req) => {
     target_provider: 'anthropic',
     redaction_method: 'pii_token_map_v1',
     redaction_session_token: sessionToken,
-    payload_size_bytes: JSON.stringify(redactedDialogue).length,
+    payload_size_bytes: JSON.stringify(anthropicMessages).length,
     purpose: 'live_voice_screening',
   }).then(() => {}, (e: any) => console.error('[cross-border-audit]', e));
 
-  // ── STEP 4: Call Claude with cache_control on system ────────
-  const anthropicBody = {
+  // ── STEP 4: Call Claude with cache_control on system + tools ──
+  const anthropicTools = toAnthropicTools(body.tools);
+  const anthropicBody: Record<string, unknown> = {
     model: 'claude-sonnet-4-6',
     max_tokens: body.max_tokens ?? 512,
     temperature: body.temperature ?? 0.2,
@@ -158,11 +220,9 @@ Deno.serve(async (req) => {
     system: [
       { type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } },
     ],
-    messages: redactedDialogue.map((m) => ({
-      role: m.role === 'assistant' ? 'assistant' : 'user',
-      content: m.content,
-    })),
+    messages: anthropicMessages,
   };
+  if (anthropicTools) anthropicBody.tools = anthropicTools;
 
   const upstream = await fetch(ANTHROPIC_URL, {
     method: 'POST',
@@ -192,11 +252,37 @@ Deno.serve(async (req) => {
     });
   }
 
-  // Non-streaming path
+  // Non-streaming path — translate text + tool_use blocks.
   const j = await upstream.json();
-  const text = (j?.content?.[0]?.text ?? '') as string;
+  const blocks = Array.isArray(j?.content) ? j.content : [];
+  const text = blocks.filter((b: any) => b?.type === 'text').map((b: any) => b.text).join('');
+  const toolUses = blocks.filter((b: any) => b?.type === 'tool_use');
+  if (toolUses.length > 0) {
+    return openaiToolResponse(text, toolUses, body.model ?? 'claude-sonnet-4-6');
+  }
   return openaiResponse(text, body.model ?? 'claude-sonnet-4-6', false);
 });
+
+// Non-streaming OpenAI response carrying tool_calls (finish_reason=tool_calls).
+function openaiToolResponse(text: string, toolUses: any[], model: string): Response {
+  const tool_calls = toolUses.map((b) => ({
+    id: b.id,
+    type: 'function',
+    function: { name: b.name, arguments: JSON.stringify(b.input ?? {}) },
+  }));
+  return new Response(JSON.stringify({
+    id: `chatcmpl_${crypto.randomUUID()}`,
+    object: 'chat.completion',
+    created: Math.floor(Date.now() / 1000),
+    model,
+    choices: [{
+      index: 0,
+      message: { role: 'assistant', content: text || null, tool_calls },
+      finish_reason: 'tool_calls',
+    }],
+    usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+  }), { status: 200, headers: { ...corsHeaders, 'content-type': 'application/json' } });
+}
 
 function openaiResponse(text: string, model: string, stream: boolean): Response {
   if (!stream) {
@@ -240,11 +326,17 @@ function openaiResponse(text: string, model: string, stream: boolean): Response 
 
 /**
  * Translate Anthropic's `messages` SSE stream into OpenAI's
- * chat.completion.chunk SSE stream that VAPI / OpenAI clients consume.
+ * chat.completion.chunk SSE stream that VAPI consumes.
  *
- * Anthropic events we care about:
- *   - content_block_delta with delta.text — append to choices[0].delta.content
- *   - message_stop — emit finish_reason='stop' + DONE
+ * Text:  content_block_delta(text_delta) → choices[0].delta.content
+ * Tools: content_block_start(tool_use)   → delta.tool_calls[{id,name,arguments:''}]
+ *        content_block_delta(input_json_delta) → delta.tool_calls[{arguments: partial}]
+ *        finish_reason becomes 'tool_calls' when any tool_use occurred.
+ * End:   message_stop → finish_reason + [DONE]
+ *
+ * Without the tool branch, Claude's tool intent (capture_consent / escalate_
+ * to_doctor) leaked back to VAPI as spoken TEXT — the "agent says consent
+ * capture out loud" bug.
  */
 function anthropicSseToOpenAiSse(input: ReadableStream<Uint8Array>): ReadableStream<Uint8Array> {
   const decoder = new TextDecoder();
@@ -253,6 +345,16 @@ function anthropicSseToOpenAiSse(input: ReadableStream<Uint8Array>): ReadableStr
   const created = Math.floor(Date.now() / 1000);
   let buf = '';
   let firstSent = false;
+  let stopReason: 'stop' | 'tool_calls' = 'stop';
+  const blockToToolIdx = new Map<number, number>();
+  let toolCount = 0;
+
+  const emit = (controller: ReadableStreamDefaultController, delta: Record<string, unknown>, finish: string | null = null) => {
+    if (!firstSent) { delta = { role: 'assistant', ...delta }; firstSent = true; }
+    controller.enqueue(encoder.encode(
+      `data: ${JSON.stringify({ id, object: 'chat.completion.chunk', created, model: 'claude-sonnet-4-6', choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`,
+    ));
+  };
 
   return new ReadableStream({
     async start(controller) {
@@ -262,34 +364,37 @@ function anthropicSseToOpenAiSse(input: ReadableStream<Uint8Array>): ReadableStr
           const { done, value } = await reader.read();
           if (done) break;
           buf += decoder.decode(value, { stream: true });
-          // SSE events are separated by \n\n
           const parts = buf.split(/\r?\n\r?\n/);
           buf = parts.pop() ?? '';
           for (const part of parts) {
-            const lines = part.split(/\r?\n/);
             let eventName = '';
             let dataStr = '';
-            for (const line of lines) {
+            for (const line of part.split(/\r?\n/)) {
               if (line.startsWith('event:')) eventName = line.slice(6).trim();
               else if (line.startsWith('data:')) dataStr += line.slice(5).trim();
             }
             if (!eventName || !dataStr) continue;
-            try {
-              const data = JSON.parse(dataStr);
-              if (eventName === 'content_block_delta' && data?.delta?.type === 'text_delta') {
-                const delta = firstSent
-                  ? { content: data.delta.text }
-                  : { role: 'assistant', content: data.delta.text };
-                firstSent = true;
-                const chunk = `data: ${JSON.stringify({ id, object: 'chat.completion.chunk', created, model: 'claude-sonnet-4-6', choices: [{ index: 0, delta, finish_reason: null }] })}\n\n`;
-                controller.enqueue(encoder.encode(chunk));
-              } else if (eventName === 'message_stop') {
-                const finish = `data: ${JSON.stringify({ id, object: 'chat.completion.chunk', created, model: 'claude-sonnet-4-6', choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] })}\n\n`;
-                controller.enqueue(encoder.encode(finish));
-                controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
-              }
-            } catch (e) {
-              console.warn('[vapi-custom-llm] sse parse', e, dataStr.slice(0, 80));
+            let data: any;
+            try { data = JSON.parse(dataStr); } catch { continue; }
+
+            if (eventName === 'content_block_start' && data?.content_block?.type === 'tool_use') {
+              const cb = data.content_block;
+              const toolIdx = toolCount++;
+              blockToToolIdx.set(data.index, toolIdx);
+              stopReason = 'tool_calls';
+              emit(controller, { tool_calls: [{ index: toolIdx, id: cb.id, type: 'function', function: { name: cb.name, arguments: '' } }] });
+            } else if (eventName === 'content_block_delta' && data?.delta?.type === 'input_json_delta') {
+              const toolIdx = blockToToolIdx.get(data.index) ?? 0;
+              emit(controller, { tool_calls: [{ index: toolIdx, function: { arguments: data.delta.partial_json ?? '' } }] });
+            } else if (eventName === 'content_block_delta' && data?.delta?.type === 'text_delta') {
+              emit(controller, { content: data.delta.text });
+            } else if (eventName === 'message_delta' && data?.delta?.stop_reason === 'tool_use') {
+              stopReason = 'tool_calls';
+            } else if (eventName === 'message_stop') {
+              controller.enqueue(encoder.encode(
+                `data: ${JSON.stringify({ id, object: 'chat.completion.chunk', created, model: 'claude-sonnet-4-6', choices: [{ index: 0, delta: {}, finish_reason: stopReason }] })}\n\n`,
+              ));
+              controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
             }
           }
         }

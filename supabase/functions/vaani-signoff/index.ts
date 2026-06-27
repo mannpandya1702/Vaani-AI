@@ -34,9 +34,23 @@ import { scrubDrugMentions } from '../_shared/drug-scrub.ts';
 // then a closing reassurance. Stage 5 architecture: Vaani is the delivery
 // layer for the doctor's plan — NOT the source. Anand-clean.
 const SOUL_OPENER: Record<string, string> = {
-  hi: 'नमस्ते। डॉक्टर साहब ने आपकी रिपोर्ट देख ली है। उनकी सलाह सुनिए — ',
-  ta: 'வணக்கம். டாக்டர் உங்கள் விவரத்தைப் பார்த்துவிட்டார். அவரின் ஆலோசனை கேளுங்கள் — ',
-  en: 'Hello. The doctor has reviewed your report. Here is their plan — ',
+  hi: 'नमस्ते। डॉक्टर साहब ने आपकी पूरी रिपोर्ट देख ली है। ',
+  ta: 'வணக்கம். டாக்டர் உங்கள் முழு விவரத்தையும் பார்த்துவிட்டார். ',
+  en: 'Hello. The doctor has reviewed your full report. ',
+};
+// Section leads so the callback RECAPS what the patient reported, then gives
+// the doctor's full advice + tests + what to watch for — not just a snippet.
+const RECAP_LEAD: Record<string, string> = {
+  hi: 'आपने बताया था — ', ta: 'நீங்கள் சொன்னது — ', en: 'You told us — ',
+};
+const PLAN_LEAD: Record<string, string> = {
+  hi: ' डॉक्टर साहब की सलाह है — ', ta: ' டாக்டரின் ஆலோசனை — ', en: " The doctor's advice — ",
+};
+const TEST_LEAD: Record<string, string> = {
+  hi: ' ये जाँच कराइए — ', ta: ' இந்த பரிசோதனைகள் — ', en: ' Please get these tests — ',
+};
+const WATCH_LEAD: Record<string, string> = {
+  hi: ' ध्यान रखिए — ', ta: ' கவனமாக இருங்கள் — ', en: ' Watch out for — ',
 };
 const SOUL_CLOSER: Record<string, string> = {
   hi: ' — आराम कीजिए, हम आपके साथ हैं।',
@@ -117,7 +131,7 @@ Deno.serve(async (req) => {
   // ── Step 1: Verify SOAP exists + signed (and read the plan) ──
   const { data: soap, error: soapErr } = await sb
     .from('soap_notes')
-    .select('id, call_id, patient_id, tenant_id, lang, mo_signed_at, mo_user_id, plan')
+    .select('id, call_id, patient_id, tenant_id, lang, mo_signed_at, mo_user_id, plan, subjective, safety_net_text, investigations_advised')
     .eq('id', soapId)
     .single();
   if (soapErr || !soap) return jsonErr(404, 'soap_not_found', soapErr?.message);
@@ -154,28 +168,50 @@ Deno.serve(async (req) => {
   // doctor's plan (read verbatim from soap_notes.plan, RMP-authored).
   // No drug names — soap-generate's contract keeps drugs in
   // mo_only_drug_hints, so plan is patient-safe to speak aloud.
-  const rawPlan = String((soap as { plan?: string }).plan ?? '');
-  // Belt-and-braces drug-scrub before reading anything to TTS.
-  // The DB CHECK constraint catches drug names at write time; this catches
-  // anything the LLM emits that the constraint missed (case differences,
-  // homophones, transliteration variants).
-  const scrubbed = scrubDrugMentions(rawPlan, lang);
-  if (scrubbed.hit) {
-    // Audit any leak we caught at runtime — the LLM should not be emitting
-    // drug names in the patient-facing plan field.
+  // Build a COMPLETE callback — recap the issues the patient reported, then
+  // the doctor's full advice, the tests advised, and what to watch for. Every
+  // section is drug-scrubbed (RED LINE: a drug name NEVER reaches a patient;
+  // those live in mo_only_drug_hints for the cockpit only).
+  const detections: string[] = [];
+  const scrub = (s: unknown): string => {
+    const r = scrubDrugMentions(String(s ?? ''), lang);
+    if (r.hit) detections.push(...r.detections);
+    return r.cleaned;
+  };
+  const subjective = scrub((soap as any).subjective);
+  const planText = scrub((soap as any).plan);
+  const safetyNet = scrub((soap as any).safety_net_text);
+  const investigations: string[] = Array.isArray((soap as any).investigations_advised)
+    ? (soap as any).investigations_advised.map((x: any) => scrub(x)).filter(Boolean)
+    : [];
+
+  if (detections.length) {
+    // Audit any leak caught at runtime — the LLM should not emit drug names
+    // in any patient-facing field.
     await sb.from('ops_incidents').insert({
       severity: 'high',
       source: 'vaani_signoff',
       category: 'drug_name_in_plan',
-      title: `vaani-signoff scrubbed drug mention(s) from SOAP plan`,
-      description: `soap_id=${soap.id} hits=${scrubbed.detections.join(',')}`,
+      title: `vaani-signoff scrubbed drug mention(s) from patient-facing fields`,
+      description: `soap_id=${soap.id} hits=${detections.join(',')}`,
       related_call_id: soap.call_id,
     }).then(() => {}, () => {/* best-effort */});
-    console.warn(`[vaani-signoff] drug mention scrubbed from plan: ${scrubbed.detections.join(',')}`);
+    console.warn(`[vaani-signoff] drug mention scrubbed: ${detections.join(',')}`);
   }
-  const planSnippet = trimPlan(scrubbed.cleaned);
-  const message = planSnippet
-    ? `${SOUL_OPENER[lang] ?? SOUL_OPENER.hi}${planSnippet}${SOUL_CLOSER[lang] ?? SOUL_CLOSER.hi}`
+
+  const L = (m: Record<string, string>) => m[lang] ?? m.hi;
+  const planSnippet = trimPlan(planText, 360);
+  const parts: string[] = [L(SOUL_OPENER)];
+  const recap = trimPlan(subjective, 150);
+  if (recap) parts.push(`${L(RECAP_LEAD)}${recap}.`);
+  if (planSnippet) parts.push(`${L(PLAN_LEAD)}${planSnippet}`);
+  if (investigations.length) parts.push(`${L(TEST_LEAD)}${investigations.slice(0, 3).join(', ')}.`);
+  const watch = trimPlan(safetyNet, 160);
+  if (watch) parts.push(`${L(WATCH_LEAD)}${watch}`);
+  parts.push(L(SOUL_CLOSER));
+  // Need at least opener + one substantive section + closer to be worth it.
+  const message = parts.length > 2
+    ? parts.join(' ').replace(/\s+/g, ' ').trim()
     : (SOUL_FALLBACK[lang] ?? SOUL_FALLBACK.hi);
 
   // ── Step 4: Generate Sarvam Bulbul TTS audio ───────────────
