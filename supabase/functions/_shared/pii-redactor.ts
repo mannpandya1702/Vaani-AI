@@ -62,6 +62,13 @@ export async function redactPII(
     abha_id?: string;
     village?: string;
   } = {},
+  opts: {
+    // 'await' (default): block on the pii_token_map insert — correct for
+    // post-call paths (soap-generate etc.) where the audit row must land.
+    // 'background': fire-and-forget the insert — used by the real-time voice
+    // proxy so DB I/O never sits on the per-turn voice latency path.
+    persist?: 'await' | 'background';
+  } = {},
 ): Promise<RedactedPayload> {
   // Anchor a stable string for token generation even when no call exists yet
   // (e.g. visit-transcribe walks in with raw audio, no call row). The FK on
@@ -186,11 +193,27 @@ export async function redactPII(
   // ── 3. Generate session token (16 hex — Anand §4) + persist ────
   const sessionToken = await generateSessionToken(tokenAnchor, 0);
   const sb = supabaseAdmin();
-  const { error } = await sb.from('pii_token_map').insert({
+  const row = {
     session_token: sessionToken,
     call_id: callId, // nullable in DB; FK satisfied only when real call
     token_map: tokenMap,
-  });
+  };
+
+  // Real-time voice path: persist in the background so the per-turn latency
+  // never waits on a DB round-trip. The redaction RESULT (token + text) is
+  // already computed; the reverse-map row is for later un-redaction/audit and
+  // tolerates async write. (This was the "responses got slower each turn" fix.)
+  if (opts.persist === 'background') {
+    sb.from('pii_token_map').insert(row).then(
+      ({ error }: { error: unknown }) => {
+        if (error && String((error as any)?.code) !== '23505') console.error('[pii-redactor] bg persist failed', error);
+      },
+      (e: unknown) => console.error('[pii-redactor] bg persist threw', e),
+    );
+    return { redactedText: text, sessionToken, tokenMap };
+  }
+
+  const { error } = await sb.from('pii_token_map').insert(row);
 
   if (error) {
     // Unique-violation retry (extremely rare with 64-bit token)

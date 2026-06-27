@@ -166,19 +166,24 @@ Deno.serve(async (req) => {
   const systemPrompt = String(body.messages.find((m) => m.role === 'system')?.content ?? '');
   const dialogue = body.messages.filter((m) => m.role !== 'system');
   let sessionToken: string | null = null;
+  // background persist → the pii_token_map insert never sits on the per-turn
+  // voice latency path (that DB await, done sequentially over a growing
+  // history, was why responses got slower and slower as the call went on).
   const redact = async (text: string): Promise<string> => {
     if (!text) return '';
-    const { redactedText, sessionToken: tok } = await redactPII(text, dbCallId, {});
+    const { redactedText, sessionToken: tok } = await redactPII(text, dbCallId, {}, { persist: 'background' });
     if (!sessionToken) sessionToken = tok;
     return redactedText;
   };
 
-  const anthropicMessages: { role: 'user' | 'assistant'; content: unknown }[] = [];
-  for (const m of dialogue) {
+  // Build messages in PARALLEL (Promise.all), not a sequential await-per-message
+  // loop — and DON'T redact Vaani's OWN output (assistant text is PII-free by
+  // prompt design; only patient utterances + tool args/results carry PII).
+  const anthropicMessages = await Promise.all(dialogue.map(async (m) => {
     if (m.role === 'assistant') {
       const blocks: unknown[] = [];
       const text = typeof m.content === 'string' ? m.content : '';
-      if (text) blocks.push({ type: 'text', text: await redact(text) });
+      if (text) blocks.push({ type: 'text', text });  // own output — no redaction
       for (const tc of m.tool_calls ?? []) {
         blocks.push({
           type: 'tool_use',
@@ -187,17 +192,14 @@ Deno.serve(async (req) => {
           input: safeParse(await redact(tc.function?.arguments ?? '{}')),
         });
       }
-      anthropicMessages.push({ role: 'assistant', content: blocks.length ? blocks : '' });
-    } else if (m.role === 'tool') {
-      const text = typeof m.content === 'string' ? m.content : JSON.stringify(m.content ?? '');
-      anthropicMessages.push({
-        role: 'user',
-        content: [{ type: 'tool_result', tool_use_id: m.tool_call_id ?? '', content: await redact(text) }],
-      });
-    } else {
-      anthropicMessages.push({ role: 'user', content: await redact(typeof m.content === 'string' ? m.content : '') });
+      return { role: 'assistant' as const, content: blocks.length ? blocks : '' };
     }
-  }
+    if (m.role === 'tool') {
+      const text = typeof m.content === 'string' ? m.content : JSON.stringify(m.content ?? '');
+      return { role: 'user' as const, content: [{ type: 'tool_result', tool_use_id: m.tool_call_id ?? '', content: await redact(text) }] };
+    }
+    return { role: 'user' as const, content: await redact(typeof m.content === 'string' ? m.content : '') };
+  }));
 
   // ── STEP 3: cross_border_transfers audit log ────────────────
   await sb.from('cross_border_transfers').insert({
