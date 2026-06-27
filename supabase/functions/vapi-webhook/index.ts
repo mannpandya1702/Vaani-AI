@@ -157,6 +157,9 @@ async function handleCallStarted(callId: string | undefined, vapiCall: any, _mes
     ?? vapiCall.phoneNumber?.number
     ?? (metadata.caller_phone_e164 as string | undefined);
   const callerEmail = (metadata.caller_email as string | undefined) ?? null;
+  // Intake-captured patient name (ASHA app). Several family members can share
+  // one phone, so we keep the name alongside the phone for identification.
+  const callerName = (metadata.caller_name as string | undefined)?.trim() || null;
   const langDeclared = (metadata.caller_lang as string | undefined) ?? 'hi';
   const assistantId = vapiCall.assistantId;
   const orgId = vapiCall.orgId ?? vapiCall.organization?.id;
@@ -198,11 +201,20 @@ async function handleCallStarted(callId: string | undefined, vapiCall: any, _mes
     phoneKey = `+91900${randomDigits(8)}`;
     fullName = `Anonymous web caller · ${callId.slice(0, 8)}`;
   }
+  // The intake-captured name always wins over the generated placeholder.
+  if (callerName) fullName = callerName;
   {
     const { data: existing } = await sb.from('patients')
-      .select('id').eq('phone_e164', phoneKey).eq('tenant_id', tenant.id).maybeSingle();
+      .select('id, full_name').eq('phone_e164', phoneKey).eq('tenant_id', tenant.id).maybeSingle();
     if (existing) {
       patientId = existing.id;
+      // Backfill the name on a returning caller if we now have one and the
+      // stored name is empty/placeholder (never clobber a real existing name).
+      const stored = (existing.full_name ?? '').trim();
+      if (callerName && (!stored || stored.startsWith('Anonymous') || stored.startsWith('Pilot caller'))) {
+        await sb.from('patients').update({ full_name: callerName }).eq('id', existing.id)
+          .then(() => {}, (e: any) => console.error('[vapi-webhook] name backfill', e));
+      }
     } else {
       const { data: created } = await sb.from('patients').insert({
         phone_e164: phoneKey,

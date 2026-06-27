@@ -27,6 +27,10 @@ const ASSISTANT_BY_LANG: Record<Lang, string> = {
 
 export default function AshaApp() {
   const [lang, setLang] = useState<Lang>('hi');
+  // Intake: capture the patient's full name. In rural settings several family
+  // members share one phone, so name + phone (not phone alone) identifies the
+  // patient. Passed to the webhook as assistantOverrides.metadata.caller_name.
+  const [patientName, setPatientName] = useState('');
   const [state, setState] = useState<CallState>('idle');
   const [turns, setTurns] = useState<TranscriptTurn[]>([]);
   const [speechLevel, setSpeechLevel] = useState(0);
@@ -198,6 +202,7 @@ export default function AshaApp() {
           metadata: {
             caller_phone_e164: callerPhone,
             caller_email: callerEmail,
+            caller_name: patientName.trim() || undefined,
             caller_lang: lang,
             client: 'asha-web',
           },
@@ -235,6 +240,25 @@ export default function AshaApp() {
         {!inCall && state !== 'ended' && (
           <section className="flex-1 flex flex-col items-center justify-center p-6">
             <LangToggle value={lang} onChange={setLang} disabled={inCall} />
+
+            <div className="mt-5 w-full max-w-sm">
+              <label htmlFor="patient-name" className="block text-xs font-medium text-muted-foreground mb-1" lang={lang}>
+                {lang === 'hi' ? 'मरीज़ का पूरा नाम' : 'நோயாளியின் முழுப் பெயர்'}
+              </label>
+              <input
+                id="patient-name"
+                value={patientName}
+                onChange={(e) => setPatientName(e.target.value)}
+                disabled={inCall}
+                placeholder={lang === 'hi' ? 'जैसे: सुनीता देवी' : 'எ.கா: சுனிதா தேவி'}
+                className="w-full rounded-lg border bg-card px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-vaani-saffron/40"
+              />
+              <p className="mt-1 text-[11px] text-muted-foreground" lang={lang}>
+                {lang === 'hi'
+                  ? 'एक ही फ़ोन पर कई मरीज़ हो सकते हैं — नाम से पहचान आसान होती है।'
+                  : 'One phone can have many patients — the name helps identify them.'}
+              </p>
+            </div>
 
             <MicCheck />
 
