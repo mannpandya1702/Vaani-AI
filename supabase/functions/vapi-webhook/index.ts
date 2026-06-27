@@ -265,13 +265,20 @@ async function handleEndOfCall(
   const ttsCost = sumByType(costs, ['voice']);
   const totalCost = (message.cost ?? 0) as number;
 
-  const duration = vapiCall.duration ?? message.durationSeconds ?? null;
+  // VAPI reports fractional seconds (e.g. 17.692, 40.883), but duration_seconds
+  // is an INTEGER column. Writing the raw float made the UPDATE throw 22P02
+  // ("invalid input syntax for type integer"), which the old code SWALLOWED
+  // (it destructured only `data`, never `error`) — so the claim returned null,
+  // the handler logged "EOC claim missed", and the call was stranded
+  // in_progress with no triage card. Round to whole seconds before writing.
+  const durationRaw = vapiCall.duration ?? message.durationSeconds ?? null;
+  const duration = durationRaw == null ? null : Math.round(Number(durationRaw));
   const transcript: string = message.transcript ?? '';
   const summary: string = message.summary ?? '';
   const endedAt = vapiCall.endedAt ?? new Date().toISOString();
 
   // Conditional update — only claim if still in_progress (idempotency belt + braces)
-  const { data: claim } = await sb.from('calls')
+  const { data: claim, error: claimErr } = await sb.from('calls')
     .update({
       ended_at: endedAt,
       duration_seconds: duration,
@@ -285,8 +292,15 @@ async function handleEndOfCall(
     .eq('outcome', 'in_progress')
     .select('id').maybeSingle();
 
+  // Surface the real DB error instead of swallowing it — this silent failure
+  // is exactly what hid the integer-duration bug. A genuine error must NOT be
+  // treated the same as "already processed".
+  if (claimErr) {
+    console.error('[vapi-webhook] EOC claim update FAILED', JSON.stringify(claimErr), 'call', callId);
+    return;
+  }
   if (!claim) {
-    console.log('[vapi-webhook] EOC claim missed — already processed');
+    console.log('[vapi-webhook] EOC claim missed — already processed', callId);
     return;
   }
 
