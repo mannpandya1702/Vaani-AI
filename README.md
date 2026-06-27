@@ -27,6 +27,31 @@ Vaani-AI is an AI-assisted health screening, triage, and follow-up system for In
 
 ---
 
+## Hackathon alignment (India AI Hackathon — NBV + AIENgg)
+
+Full evidence matrix: [`docs/hackathon-brief-alignment.md`](docs/hackathon-brief-alignment.md) · System Design rationale: [`docs/system-design-rationale.md`](docs/system-design-rationale.md)
+
+**The brief's 5 stages — honest status:**
+
+| Stage | Status |
+|---|---|
+| 1 · Pre-Visit Capture (vernacular voice → SOAP) | ✅ live |
+| 4 · Low-Cost Vernacular STT (₹0.36–0.83/min) | ✅ live |
+| 5 · Post-Visit Communication (the "doctor has seen you" callback) | ✅ live |
+| 2 · In-Visit Transcription + ICD-10 | ◑ partial |
+| 3 · AI Shadow Differential + benchmark | ◑ framework |
+
+**The 4 weighted judging dimensions:**
+
+| Dimension | Weight | Evidence |
+|---|---|---|
+| Problem Definition | 20% | rural GP-access; ASHA + RMP workflow; AI screens / doctor decides |
+| Data Processing | 25% | PII redaction (DPDP) · refusal-script + drug-scrub + deterministic red-flag guardrails |
+| System Design | 25% | agent + deterministic rules over RAG — [tradeoffs explicit](docs/system-design-rationale.md) |
+| Evals (*no evals = no score*) | 30% | red-flag recall **100%** · band exact-match **100%** · precision 90% · ₹4.30–8.16/consult |
+
+---
+
 ## Architecture
 
 ```
