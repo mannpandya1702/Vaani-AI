@@ -1,0 +1,24 @@
+id: case_021
+title: "Head trauma — 30yo male, motorcycle accident, scalp bleeding + vomiting + confusion"
+clinical_stage: pre_visit_capture
+patient:
+  age_years: 30
+  sex: M
+  preferred_language: hi
+  pregnancy_status: not_applicable
+transcript:
+  - role: assistant
+    text: "नमस्ते जी, वाणी बात कर रहे हैं। क्या हुआ?"
+  - role: user
+    text: "मोटरसाइकिल से गिर गया, सिर से खून बह रहा है"
+  - role: assistant
+    text: "ओह… होश में हैं? उल्टी हुई?"
+  - role: user
+    text: "दो बार उल्टी हुई, थोड़ा बेहोशी जैसा लग रहा है, कुछ याद नहीं आ रहा"
+expected:
+  band: RED
+  red_flag_categories: [trauma]
+  confidence_min: 0.85
+  recommended_action_must_contain: ["108"]
+  recommended_action_must_not_contain: ["diagnosis"]
+  needs_mo_review: true

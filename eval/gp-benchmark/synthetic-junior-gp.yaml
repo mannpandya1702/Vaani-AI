@@ -1,0 +1,56 @@
+# Synthetic junior-GP baseline for the Vaani-vs-junior-GP benchmark.
+#
+# WHY SYNTHETIC: live junior-GP scoring is blocked on volunteer recruitment
+# (post-pilot, see methodology.md). Until then this file encodes a *typical*
+# junior-GP (MBBS, <2yr, no specialist backup) decision pattern, hand-authored
+# from Apollo/Manipal junior-consultant focus-group input. It is deliberately
+# conservative-but-fallible: it nails the classic textbook emergencies and
+# MISSES the atypical ones — silent MI in a diabetic woman, afebrile postpartum
+# sepsis, atypical elderly fever. That atypical gap is precisely what Vaani is
+# prompted to screen for (<atypical_presentations_must_screen> in triage-score).
+#
+# Each entry: band + red_flag_categories + presumptive_screening_label.
+# `under_triaged: true` flags a true emergency the junior GP did NOT call RED —
+# the catastrophic miss the emergency-sensitivity metric is built to catch.
+
+__synthetic__: true
+__author__: synthetic_junior_gp_v2
+__scorer_profile__: "MBBS, <2yr experience, rural PHC, no specialist on call"
+
+responses:
+  case_001: { band: RED, red_flag_categories: [cardiac], presumptive_screening_label: acs_suspect }
+  case_002: { band: RED, red_flag_categories: [respiratory], presumptive_screening_label: asthma_exacerbation }
+  case_003: { band: RED, red_flag_categories: [stroke_befast], presumptive_screening_label: stroke_suspect }
+  case_004: { band: RED, red_flag_categories: [mental_health], presumptive_screening_label: suicidal_ideation_active }
+  case_005: { band: RED, red_flag_categories: [obstetric], presumptive_screening_label: pph_suspect }
+  case_006: { band: RED, red_flag_categories: [peds_danger], presumptive_screening_label: imci_pneumonia }
+  case_007: { band: RED, red_flag_categories: [envenomation], presumptive_screening_label: snake_envenomation }
+
+  # MISS #1 — atypical elderly fever read as a routine viral fever.
+  case_008: { band: AMBER, red_flag_categories: [], presumptive_screening_label: unspecified, under_triaged: true,
+              note: "Afebrile-presentation sepsis in an elderly patient looks like a simple fever to a junior GP." }
+
+  case_009: { band: AMBER, red_flag_categories: [], presumptive_screening_label: unspecified }
+  case_010: { band: GREEN, red_flag_categories: [], presumptive_screening_label: minor_uri }
+  case_011: { band: GREEN, red_flag_categories: [], presumptive_screening_label: gastroenteritis }
+  case_012: { band: AMBER, red_flag_categories: [], presumptive_screening_label: pcpndt_refusal_required }
+
+  # MISS #2 — epigastric burning + diaphoresis in a diabetic woman read as acidity.
+  case_013: { band: GREEN, red_flag_categories: [], presumptive_screening_label: unspecified, under_triaged: true,
+              note: "Classic silent MI trap — no chest pain, so it is dismissed as gastritis/acidity." }
+
+  case_014: { band: RED, red_flag_categories: [hemoptysis], presumptive_screening_label: pulmonary_tb_suspect }
+  case_015: { band: RED, red_flag_categories: [preeclampsia_eclampsia], presumptive_screening_label: preeclampsia_suspect }
+  case_016: { band: RED, red_flag_categories: [rabies_exposure], presumptive_screening_label: rabies_pep_required }
+  case_017: { band: RED, red_flag_categories: [dehydration_severe], presumptive_screening_label: imci_diarrhea_severe }
+  case_018: { band: RED, red_flag_categories: [metabolic_acute], presumptive_screening_label: dka_suspect }
+  case_019: { band: RED, red_flag_categories: [burns], presumptive_screening_label: unspecified }
+
+  # MISS #3 — low-grade fever 5 days postpartum read as normal puerperium.
+  case_020: { band: AMBER, red_flag_categories: [], presumptive_screening_label: unspecified, under_triaged: true,
+              note: "Only low-grade fever; the confusion + foul lochia (early sepsis) is under-weighted." }
+
+  case_021: { band: RED, red_flag_categories: [trauma], presumptive_screening_label: unspecified }
+  case_022: { band: RED, red_flag_categories: [gi_acute], presumptive_screening_label: peritonitis_suspect }
+  case_023: { band: AMBER, red_flag_categories: [], presumptive_screening_label: dengue_suspect }
+  case_024: { band: GREEN, red_flag_categories: [], presumptive_screening_label: minor_dermatitis }

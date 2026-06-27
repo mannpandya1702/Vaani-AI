@@ -22,6 +22,7 @@ import { verifyBearer } from '../_shared/constant-time-compare.ts';
 import { supabaseAdmin } from '../_shared/supabase-admin.ts';
 import { redactPII } from '../_shared/pii-redactor.ts';
 import { claudeCall } from '../_shared/anthropic-client.ts';
+import { ICD10_CATALOGUE_PROMPT, validateIcd10 } from '../_shared/icd10-rural.ts';
 
 const SYSTEM_PROMPT = `You are Vaani-AI's SOAP-note drafter for a named Registered Medical Practitioner (RMP) to review and sign. You are NOT a doctor. Your output is a structured eSanjeevani-format SOAP note in strict JSON via the emit_soap tool.
 
@@ -29,19 +30,24 @@ const SYSTEM_PROMPT = `You are Vaani-AI's SOAP-note drafter for a named Register
 1. NEVER use the word "diagnosis" anywhere. Use presumptive_screening_label only.
 2. NEVER place drug names, doses, or brand names in subjective/objective/assessment/plan. Drug suggestions belong only in mo_only_drug_hints. The patient-facing Plan is non-pharmacological + "the doctor will call you back".
 3. Subjective is in the patient's preferred_language (use Devanagari/Tamil/Telugu script natively). Objective/Assessment/Plan are in English (for MO chart review).
-4. ICD-10 codes (3-7 chars) AND ICD-11 MMS codes — at least one of each when confident.
+4. icd10_codes: choose ONLY from the <icd10_catalogue> below. Emit the exact code strings (e.g. "I21.9"), 1-3 codes, most-specific first. NEVER invent a code that is not in the catalogue — an off-catalogue code is dropped and counts as a miss. If nothing fits, emit []. icd11_codes (MMS) may be free-form when confident.
 5. Assessment cites protocols [IMCI §X], [PEN P#], [STW §X], or [mhGAP] when relevant. Never fabricate.
 6. Plan ends with "RMP <name> will call back within <window>" in the patient's preferred language.
 7. esanjeevani_payload mirrors S/O/A/P plus the coded fields so the MO can paste-into the government EHR with one click.
 8. patient_callback_eta_min: RED → 15-30, AMBER → 60-180, GREEN → 240-720.
-9. differential_list: 2-4 items, each {label, likelihood (high|medium|low), rationale (≤30 words)}.
+9. differential_list: a RANKED top-3 (most likely first), each {label, likelihood (high|medium|low), confidence (0.0-1.0), rationale (≤30 words)}. This is the MO-only shadow differential — it is NEVER shown to the patient. Confidences are your own calibrated estimate and need not sum to 1. Emit fewer than 3 only when the transcript genuinely supports fewer.
 10. mo_only_drug_hints: 0-5 items as plain strings like "Paracetamol 500mg BD x3d if T>38°C". Empty list is fine.
 11. follow_up_channel: one of voice|whatsapp|sms — pick the most appropriate given triage band + patient profile.
 12. If you don't have enough information for a field, use "" or [] rather than fabricating. Never invent a vital sign.
 </rules>
 
+<icd10_catalogue>
+Choose icd10_codes ONLY from this curated rural-primary-care catalogue (code=title), grouped by clinical system:
+${ICD10_CATALOGUE_PROMPT}
+</icd10_catalogue>
+
 <padding_for_cache>
-This prompt is intentionally over the 1024-token Anthropic cache minimum so ephemeral cache_control activates. Subsequent calls within the cache window pay only the delta tokens.
+This prompt is intentionally over the 1024-token Anthropic cache minimum so ephemeral cache_control activates. Subsequent calls within the cache window pay only the delta tokens. The icd10_catalogue above is part of the cached system block, so grounding the codes adds no per-turn cost in steady state.
 </padding_for_cache>
 
 Use the emit_soap tool to return your output.`;
@@ -59,18 +65,20 @@ const SOAP_TOOL = {
       presumptive_screening_label: { type: 'string' },
       differential_list: {
         type: 'array',
-        maxItems: 4,
+        maxItems: 3,
+        description: 'RANKED top-3 (most likely first). MO-only shadow differential — never patient-facing.',
         items: {
           type: 'object',
           properties: {
             label: { type: 'string' },
             likelihood: { type: 'string', enum: ['high', 'medium', 'low'] },
+            confidence: { type: 'number', minimum: 0, maximum: 1, description: 'Calibrated 0-1 confidence for this item' },
             rationale: { type: 'string' },
           },
           required: ['label', 'likelihood'],
         },
       },
-      icd10_codes: { type: 'array', items: { type: 'string' } },
+      icd10_codes: { type: 'array', maxItems: 3, items: { type: 'string' }, description: 'Codes chosen from the icd10_catalogue only' },
       icd11_codes: { type: 'array', items: { type: 'string' } },
       mo_only_drug_hints: { type: 'array', items: { type: 'string' } },
       esanjeevani_payload: { type: 'object' },
@@ -212,6 +220,35 @@ Deno.serve(async (req) => {
     return jsonErr(502, 'no_tool_use', `Claude did not emit emit_soap (stop_reason=${claudeResp.stopReason})`);
   }
 
+  // ── Ground the ICD-10 codes against the curated catalogue ──────
+  // Claude is constrained by the prompt, but we hard-validate anyway: any
+  // off-catalogue code is dropped so the MO chart never carries an invented
+  // code. dropped[] is logged as the hallucination signal.
+  const icd10 = validateIcd10(soap.icd10_codes);
+  if (icd10.dropped.length > 0) {
+    console.warn(`[soap-generate] dropped off-catalogue ICD-10 codes for call ${callId}:`, icd10.dropped);
+  }
+
+  // ── Normalise the MO-only ranked differential ──────────────────
+  // Keep a stable top-3, coerce per-item confidence into 0-1, and sort by
+  // confidence (desc) when present so the cockpit renders a true ranking.
+  const LIKELIHOOD_WEIGHT: Record<string, number> = { high: 0.9, medium: 0.6, low: 0.3 };
+  const differential = (Array.isArray(soap.differential_list) ? soap.differential_list : [])
+    .filter((d: any) => d && typeof d.label === 'string' && d.label.trim())
+    .map((d: any) => {
+      const likelihood = ['high', 'medium', 'low'].includes(d.likelihood) ? d.likelihood : 'medium';
+      let conf = Number(d.confidence);
+      if (!Number.isFinite(conf) || conf < 0 || conf > 1) conf = LIKELIHOOD_WEIGHT[likelihood];
+      return {
+        label: String(d.label).trim(),
+        likelihood,
+        confidence: Math.round(conf * 100) / 100,
+        rationale: typeof d.rationale === 'string' ? d.rationale : '',
+      };
+    })
+    .sort((a, b) => b.confidence - a.confidence)
+    .slice(0, 3);
+
   // ── Insert into soap_notes ─────────────────────────────────────
   const { data: inserted, error: insertErr } = await sb
     .from('soap_notes')
@@ -224,10 +261,10 @@ Deno.serve(async (req) => {
       objective: String(soap.objective ?? ''),
       assessment: String(soap.assessment ?? ''),
       plan: String(soap.plan ?? ''),
-      icd10_codes: Array.isArray(soap.icd10_codes) ? soap.icd10_codes : [],
+      icd10_codes: icd10.valid,
       icd11_codes: Array.isArray(soap.icd11_codes) ? soap.icd11_codes : [],
       presumptive_screening_label: String(soap.presumptive_screening_label ?? 'unspecified'),
-      differential_list: Array.isArray(soap.differential_list) ? soap.differential_list : [],
+      differential_list: differential,
       // Audit-§2 fix: persist mo_only_drug_hints (migration 009 added
       // the column). MO-only — never read by vaani-signoff or any
       // patient-facing surface.

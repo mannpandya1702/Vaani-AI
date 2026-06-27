@@ -1,0 +1,179 @@
+// eval/cost-model.ts — reproducible unit-economics model for Vaani-AI.
+//
+// The hackathon Stage 4 ask is "low-cost vernacular STT under ₹1/min", and the
+// deck claims a blended per-consult marginal cost. Rather than assert a number,
+// this script derives every figure from ONE rate table + stated call-shape
+// assumptions, prints the ₹/min components and the per-3-min-consult blend, and
+// (re)writes docs/unit-economics-slide.md so the slide and the math never drift.
+//
+// Pure computation — no DB, no network. Run:
+//   deno run --allow-write eval/cost-model.ts
+//   deno run eval/cost-model.ts            # print only, skip file write
+//
+// Rate sources are tracked in docs/cost-analysis.md (vendor audit trail).
+
+const USD_INR = 83; // RBI ref ~Jun 2026
+
+// ── Single rate table (the only place numbers live) ───────────────
+const RATE = {
+  stt_sarvam_inr_min: 0.83,    // Sarvam Saarika v2 — $0.010/min streaming STT (live screening path)
+  stt_deepgram_inr_min: 0.36,  // Deepgram nova-3 — $0.0043/min (ambient in-visit path, diarized)
+  tts_bulbul_inr_min: 1.50,    // Sarvam Bulbul v3 — callback TTS
+  claude_in_usd_mtok: 3,       // Claude Sonnet 4.6 input
+  claude_out_usd_mtok: 15,     // Claude Sonnet 4.6 output
+  claude_cached_in_usd_mtok: 0.30, // cached input read (vapi-custom-llm proxy emits cache_control)
+  exotel_tollfree_inr_min: 3.0,    // Exotel toll-free rack rate
+  exotel_backdial_inr_min: 1.0,    // missed-call → outbound back-dial (effective)
+  supabase_inr_consult: 0.10,      // DB + storage ops per consult (rough)
+};
+
+// ── Call-shape assumptions for a typical 3-min screening consult ──
+// Stated explicitly so reviewers can challenge them. A 3-min ASHA-mediated
+// screen is ~12 assistant turns: greeting, consent, chief complaint, onset,
+// severity, associated symptoms, demographic gate, red-flag hold-line, close.
+const SHAPE = {
+  stt_minutes: 3,
+  tts_seconds: 8,            // "डॉक्टर साहब ने देख लिया है" callback
+  live_turns: 12,
+  live_sys_tokens: 1800,     // Hindi system prompt (cacheable system block)
+  live_dyn_tokens: 400,      // per-turn history + user message (not cacheable)
+  live_out_tokens: 80,       // per-turn assistant reply
+  triage_in: 1800, triage_cached_in: 1500, triage_out: 300,   // post-call triage-score
+  soap_in: 2200, soap_cached_in: 1700, soap_out: 800,         // post-call soap-generate
+};
+
+interface LiveLlm { cold: number; warm: number }
+interface CostModel {
+  stt: number; tts: number; live: LiveLlm; triage: number; soap: number;
+  telTollfree: number; telBackdial: number;
+  totals: { tollfree_cold: number; tollfree_warm: number; missedcall_cold: number; missedcall_warm: number };
+}
+
+const inr = (usd: number) => usd * USD_INR;
+const round2 = (x: number) => Math.round(x * 100) / 100;
+
+// Claude cost in ₹ for a single call. cachedIn tokens billed at the cached rate.
+function claudeInr(tin: number, tout: number, cachedIn = 0): number {
+  const uncachedIn = Math.max(0, tin - cachedIn);
+  return inr(
+    (uncachedIn / 1e6) * RATE.claude_in_usd_mtok +
+    (cachedIn / 1e6) * RATE.claude_cached_in_usd_mtok +
+    (tout / 1e6) * RATE.claude_out_usd_mtok,
+  );
+}
+
+// Live voice LLM cost across the call, cold (no cache) vs warm (system block
+// cached from turn 2 onward via the vapi-custom-llm proxy).
+function liveLlmInr(): LiveLlm {
+  let cold = 0, warm = 0;
+  for (let t = 0; t < SHAPE.live_turns; t++) {
+    const tin = SHAPE.live_sys_tokens + SHAPE.live_dyn_tokens;
+    cold += claudeInr(tin, SHAPE.live_out_tokens, 0);
+    warm += t === 0
+      ? claudeInr(tin, SHAPE.live_out_tokens, 0)                 // turn 1 pays full input (cache write)
+      : claudeInr(tin, SHAPE.live_out_tokens, SHAPE.live_sys_tokens);
+  }
+  return { cold: round2(cold), warm: round2(warm) };
+}
+
+export function model(): CostModel {
+  const stt = SHAPE.stt_minutes * RATE.stt_sarvam_inr_min;
+  const tts = (SHAPE.tts_seconds / 60) * RATE.tts_bulbul_inr_min;
+  const live = liveLlmInr();
+  const triage = claudeInr(SHAPE.triage_in, SHAPE.triage_out, SHAPE.triage_cached_in);
+  const soap = claudeInr(SHAPE.soap_in, SHAPE.soap_out, SHAPE.soap_cached_in);
+  const telTollfree = (SHAPE.stt_minutes + SHAPE.tts_seconds / 60) * RATE.exotel_tollfree_inr_min;
+  const telBackdial = 1.0 * RATE.exotel_backdial_inr_min;
+  const base = stt + tts + triage + soap + RATE.supabase_inr_consult;
+  const consult = (liveLlm: number, tel: number) => round2(base + liveLlm + tel);
+  return {
+    stt: round2(stt), tts: round2(tts), live, triage: round2(triage), soap: round2(soap),
+    telTollfree: round2(telTollfree), telBackdial: round2(telBackdial),
+    totals: {
+      tollfree_cold: consult(live.cold, telTollfree),
+      tollfree_warm: consult(live.warm, telTollfree),
+      missedcall_cold: consult(live.cold, telBackdial),
+      missedcall_warm: consult(live.warm, telBackdial),
+    },
+  };
+}
+
+function renderSlide(m: CostModel): string {
+  const blended = round2(m.totals.missedcall_warm / SHAPE.stt_minutes);
+  return `# Vaani-AI — Unit Economics (one slide)
+
+> Auto-generated by \`eval/cost-model.ts\`. Do not hand-edit — re-run the script.
+> Rate audit trail: \`docs/cost-analysis.md\`. FX: ₹${USD_INR}/USD.
+
+## Per-minute component rates
+
+| Component | Provider | ₹ / min |
+|---|---|---:|
+| STT — live screening | Sarvam Saarika v2 | **₹${RATE.stt_sarvam_inr_min}** |
+| STT — ambient in-visit (diarized) | Deepgram nova-3 | **₹${RATE.stt_deepgram_inr_min}** |
+| TTS — callback | Sarvam Bulbul v3 | ₹${RATE.tts_bulbul_inr_min} |
+| Telephony — toll-free | Exotel | ₹${RATE.exotel_tollfree_inr_min} |
+| Telephony — missed-call back-dial | Exotel | ₹${RATE.exotel_backdial_inr_min} |
+
+**Stage 4 claim — "vernacular STT under ₹1/min" — holds with the number behind it: ₹${RATE.stt_sarvam_inr_min}/min (Sarvam) and ₹${RATE.stt_deepgram_inr_min}/min (Deepgram). Both under ₹1.**
+
+## Per 3-min consult breakdown
+
+| Line item | ₹ (cold) | ₹ (cache-warm) |
+|---|---:|---:|
+| STT (3 min × ₹${RATE.stt_sarvam_inr_min}) | ${m.stt} | ${m.stt} |
+| Live voice LLM (${SHAPE.live_turns} turns) | ${m.live.cold} | ${m.live.warm} |
+| Post-call triage-score | ${m.triage} | ${m.triage} |
+| Post-call soap-generate | ${m.soap} | ${m.soap} |
+| TTS callback (${SHAPE.tts_seconds}s) | ${m.tts} | ${m.tts} |
+| Supabase DB/storage | ${RATE.supabase_inr_consult} | ${RATE.supabase_inr_consult} |
+| **Telephony — missed-call** | ${m.telBackdial} | ${m.telBackdial} |
+| **TOTAL — missed-call path** | **₹${m.totals.missedcall_cold}** | **₹${m.totals.missedcall_warm}** |
+| **Telephony — toll-free** | ${m.telTollfree} | ${m.telTollfree} |
+| **TOTAL — toll-free path** | **₹${m.totals.tollfree_cold}** | **₹${m.totals.tollfree_warm}** |
+
+**Headline:** missed-call path lands at **₹${m.totals.missedcall_warm}/consult** (cache-warm) → **blended ₹${blended}/min**.
+The cache lever (vapi-custom-llm proxy emitting \`cache_control\`) cuts the live LLM from ₹${m.live.cold} → ₹${m.live.warm} per consult.
+
+## Why this beats the baseline
+
+| Channel | Cost per consult |
+|---|---:|
+| **Vaani (missed-call, warm)** | **₹${m.totals.missedcall_warm}** |
+| Offline rural consult (Aanya est.) | ₹150 – ₹400 |
+| eSanjeevani video consult | ₹400 – ₹1,500 |
+
+Assumptions (tunable in \`SHAPE\`): ${SHAPE.live_turns} live turns × ${SHAPE.live_sys_tokens} sys + ${SHAPE.live_dyn_tokens} dyn tokens, ${SHAPE.live_out_tokens} out/turn.
+`;
+}
+
+function renderConsole(m: CostModel): string {
+  const lines = [
+    'Vaani-AI cost model',
+    '─'.repeat(40),
+    `STT (3min)            ₹${m.stt}`,
+    `Live LLM   cold/warm  ₹${m.live.cold} / ₹${m.live.warm}`,
+    `triage-score (warm)   ₹${m.triage}`,
+    `soap-generate (warm)  ₹${m.soap}`,
+    `TTS callback          ₹${m.tts}`,
+    `Telephony tollfree    ₹${m.telTollfree}`,
+    `Telephony backdial    ₹${m.telBackdial}`,
+    '',
+    `TOTAL toll-free   cold/warm  ₹${m.totals.tollfree_cold} / ₹${m.totals.tollfree_warm}`,
+    `TOTAL missed-call cold/warm  ₹${m.totals.missedcall_cold} / ₹${m.totals.missedcall_warm}`,
+    `Blended (missed-call, warm)  ₹${round2(m.totals.missedcall_warm / SHAPE.stt_minutes)}/min`,
+  ];
+  return lines.join('\n');
+}
+
+const m = model();
+console.log(renderConsole(m));
+
+// Write the slide unless --print-only. Guard the Deno API so the math stays
+// importable from non-Deno contexts.
+const anyDeno = (globalThis as any).Deno;
+if (anyDeno && !(anyDeno.args ?? []).includes('--print-only')) {
+  const path = new URL('../docs/unit-economics-slide.md', import.meta.url).pathname;
+  await anyDeno.writeTextFile(path, renderSlide(m));
+  console.log(`\nWrote ${path}`);
+}

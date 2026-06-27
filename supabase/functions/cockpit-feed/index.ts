@@ -52,7 +52,7 @@ Deno.serve(async (req) => {
   const callIds = (triage ?? []).map((t) => t.call_id);
   const patientIds = (triage ?? []).map((t) => t.patient_id);
 
-  const [soapResp, callResp, patientResp] = await Promise.all([
+  const [soapResp, callResp, patientResp, shadowResp] = await Promise.all([
     sb.from('soap_notes')
       .select('id, call_id, subjective, objective, assessment, plan, presumptive_screening_label, differential_list, icd10_codes, icd11_codes, mo_only_drug_hints, lang, mo_signed_at, mo_user_id, generated_at')
       .in('call_id', callIds),
@@ -62,6 +62,9 @@ Deno.serve(async (req) => {
     sb.from('patients')
       .select('id, full_name, phone_e164, age_years, sex, preferred_language, pregnancy_status, village_name')
       .in('id', patientIds),
+    sb.from('shadow_diagnoses')
+      .select('id, call_id, differential_diagnoses, recommended_tests, recommended_medications, referral_recommended, referral_reason, urgency, missing_information, red_flag_urgency_override, doctor_action, doctor_referral_decision, doctor_urgency, doctor_notes, doctor_decided_at, generated_at')
+      .in('call_id', callIds),
   ]);
 
   const soapByCall = new Map<string, any>();
@@ -70,12 +73,15 @@ Deno.serve(async (req) => {
   for (const c of callResp.data ?? []) callById.set(c.id, c);
   const patientById = new Map<string, any>();
   for (const p of patientResp.data ?? []) patientById.set(p.id, p);
+  const shadowByCall = new Map<string, any>();
+  for (const s of shadowResp.data ?? []) shadowByCall.set(s.call_id, s);
 
   const rows = (triage ?? []).map((t) => ({
     triage: t,
     soap: soapByCall.get(t.call_id) ?? null,
     call: callById.get(t.call_id) ?? null,
     patient: patientById.get(t.patient_id) ?? null,
+    shadow: shadowByCall.get(t.call_id) ?? null,
   }));
 
   return new Response(JSON.stringify({ rows, fetched_at: new Date().toISOString() }), {

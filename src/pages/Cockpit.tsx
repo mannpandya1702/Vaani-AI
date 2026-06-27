@@ -13,11 +13,20 @@ import {
   Languages,
   Mic,
   Stethoscope,
+  ListOrdered,
+  Brain,
+  FlaskConical,
+  HelpCircle,
+  Check,
+  Pencil,
+  Ban,
+  ArrowUpRight,
   X,
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { icd10Title } from '@/lib/icd10-rural';
 
 const FN_BASE = import.meta.env.VITE_SUPABASE_URL + '/functions/v1';
 const FN_AUTH = `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`;
@@ -54,7 +63,12 @@ interface CockpitRow {
     assessment: string;
     plan: string;
     presumptive_screening_label: string;
-    differential_list: any[];
+    differential_list: Array<{
+      label: string;
+      likelihood?: 'high' | 'medium' | 'low';
+      confidence?: number;
+      rationale?: string;
+    }>;
     icd10_codes: string[];
     icd11_codes: string[];
     mo_only_drug_hints: string[] | null;
@@ -79,6 +93,29 @@ interface CockpitRow {
     preferred_language: string;
     pregnancy_status: string | null;
     village_name: string | null;
+  };
+  // AI Shadow Diagnosis (Stage 3) — a separate AI clinical opinion, generated
+  // before the RMP reviews. The doctor remains the final authority.
+  shadow: null | {
+    id: string;
+    differential_diagnoses: Array<{
+      condition: string;
+      confidence?: number;
+      reasoning?: string;
+      supporting_findings?: string[];
+    }>;
+    recommended_tests: string[];
+    recommended_medications: string[];
+    referral_recommended: boolean | null;
+    referral_reason: string | null;
+    urgency: 'Routine' | 'Urgent' | 'Emergency' | null;
+    missing_information: string[];
+    red_flag_urgency_override: boolean;
+    doctor_action: 'pending' | 'ignored' | 'accepted' | 'edited';
+    doctor_referral_decision: boolean | null;
+    doctor_urgency: string | null;
+    doctor_notes: string | null;
+    doctor_decided_at: string | null;
   };
 }
 
@@ -371,17 +408,58 @@ function SoapReviewDialog({
   const [soulMessage, setSoulMessage] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
+  // AI Shadow Diagnosis — doctor decision capture (ignore / accept / edit).
+  const [reviewing, setReviewing] = useState(false);
+  const [localDecision, setLocalDecision] = useState<
+    { action: 'ignored' | 'accepted' | 'edited'; referral?: boolean; urgency?: string; notes?: string } | null
+  >(null);
+  const [editMode, setEditMode] = useState(false);
+  const [editReferral, setEditReferral] = useState(false);
+  const [editUrgency, setEditUrgency] = useState<'Routine' | 'Urgent' | 'Emergency'>('Urgent');
+  const [editNotes, setEditNotes] = useState('');
+
   // Audit §4: reset soulMessage when the dialog closes so the next row's
   // "Sent: …" banner doesn't leak across cards. Also revoke any pending
-  // blob URL on the <audio>.
+  // blob URL on the <audio>. Reset the shadow-review state too.
   useEffect(() => {
     if (open) return;
     setSoulMessage(null);
+    setLocalDecision(null);
+    setEditMode(false);
     if (audioRef.current?.dataset.blobUrl) {
       try { URL.revokeObjectURL(audioRef.current.dataset.blobUrl); } catch {/* noop */}
       audioRef.current.dataset.blobUrl = '';
     }
   }, [open]);
+
+  async function submitShadowReview(
+    action: 'ignored' | 'accepted' | 'edited',
+    extras?: { doctor_referral_decision?: boolean; doctor_urgency?: string; doctor_notes?: string },
+  ) {
+    if (!row?.shadow) return;
+    setReviewing(true);
+    try {
+      const r = await fetch(`${FN_BASE}/shadow-diagnosis-review`, {
+        method: 'POST',
+        headers: { Authorization: FN_AUTH, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ shadow_id: row.shadow.id, action, ...extras }),
+      });
+      const body = await r.json();
+      if (!r.ok) throw new Error(body?.error ?? `HTTP ${r.status}`);
+      setLocalDecision({
+        action,
+        referral: extras?.doctor_referral_decision,
+        urgency: extras?.doctor_urgency,
+        notes: extras?.doctor_notes,
+      });
+      setEditMode(false);
+      toast.success(`AI opinion ${action} — your decision is the record of truth.`);
+    } catch (e: any) {
+      toast.error(e?.message ?? 'Could not save your decision');
+    } finally {
+      setReviewing(false);
+    }
+  }
 
   if (!row) return null;
   const isSigned = !!row.soap?.mo_signed_at;
@@ -484,27 +562,60 @@ function SoapReviewDialog({
                 )}
 
                 {row.soap.differential_list?.length > 0 && (
-                  <div>
-                    <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
-                      Differential
+                  <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3">
+                    <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-300 mb-2">
+                      <ListOrdered className="w-3.5 h-3.5" />
+                      AI-suggested differential · ranked · MO-only · NOT shared with patient
                     </div>
-                    <ul className="text-sm space-y-1">
-                      {row.soap.differential_list.map((d: any, i: number) => (
-                        <li key={i} className="flex gap-2">
-                          <span className="text-muted-foreground">{d.likelihood}</span>
-                          <span className="font-medium">{d.label}</span>
-                          {d.rationale && <span className="text-muted-foreground">— {d.rationale}</span>}
+                    <ol className="text-sm space-y-1.5">
+                      {row.soap.differential_list.map((d, i) => (
+                        <li key={i} className="flex items-start gap-2">
+                          <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-500/20 text-[11px] font-semibold text-amber-700 dark:text-amber-300">
+                            {i + 1}
+                          </span>
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-medium">{d.label}</span>
+                              {d.likelihood && (
+                                <span className={cn(
+                                  'rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide',
+                                  d.likelihood === 'high' && 'bg-red-500/15 text-red-600 dark:text-red-300',
+                                  d.likelihood === 'medium' && 'bg-amber-500/15 text-amber-700 dark:text-amber-300',
+                                  d.likelihood === 'low' && 'bg-secondary text-muted-foreground',
+                                )}>
+                                  {d.likelihood}
+                                </span>
+                              )}
+                              {typeof d.confidence === 'number' && (
+                                <span className="font-mono text-[11px] text-muted-foreground">
+                                  {(d.confidence * 100).toFixed(0)}%
+                                </span>
+                              )}
+                            </div>
+                            {d.rationale && (
+                              <div className="text-xs text-muted-foreground">{d.rationale}</div>
+                            )}
+                          </div>
                         </li>
                       ))}
-                    </ul>
+                    </ol>
                   </div>
                 )}
 
                 {(row.soap.icd10_codes?.length || row.soap.icd11_codes?.length) && (
                   <div className="flex flex-wrap items-center gap-2 text-xs">
-                    {row.soap.icd10_codes?.map((c) => (
-                      <span key={`a${c}`} className="rounded-md border bg-secondary/30 px-2 py-0.5">ICD-10 {c}</span>
-                    ))}
+                    {row.soap.icd10_codes?.map((c) => {
+                      const title = icd10Title(c);
+                      return (
+                        <span
+                          key={`a${c}`}
+                          title={title ?? undefined}
+                          className="rounded-md border bg-secondary/30 px-2 py-0.5"
+                        >
+                          ICD-10 {c}{title ? ` — ${title}` : ''}
+                        </span>
+                      );
+                    })}
                     {row.soap.icd11_codes?.map((c) => (
                       <span key={`b${c}`} className="rounded-md border bg-secondary/30 px-2 py-0.5">ICD-11 {c}</span>
                     ))}
@@ -521,6 +632,206 @@ function SoapReviewDialog({
                   </div>
                 </div>
               </>
+            )}
+
+            {row.shadow && (
+              <div className="rounded-xl border-2 border-indigo-500/40 bg-indigo-500/5 p-4 space-y-3">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Brain className="w-4 h-4 text-indigo-600 dark:text-indigo-300" />
+                  <span className="text-sm font-semibold">AI Clinical Opinion</span>
+                  <span className="text-[10px] uppercase tracking-wider rounded bg-indigo-500/15 px-1.5 py-0.5 text-indigo-700 dark:text-indigo-300">
+                    Shadow Diagnosis · MO advisory
+                  </span>
+                  {row.shadow.urgency && (
+                    <span className={cn(
+                      'ml-auto rounded-md px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide',
+                      row.shadow.urgency === 'Emergency' && 'bg-red-500/15 text-red-600 dark:text-red-300',
+                      row.shadow.urgency === 'Urgent' && 'bg-amber-500/15 text-amber-700 dark:text-amber-300',
+                      row.shadow.urgency === 'Routine' && 'bg-secondary text-muted-foreground',
+                    )}>
+                      {row.shadow.urgency}
+                    </span>
+                  )}
+                </div>
+                <div className="text-[11px] text-muted-foreground -mt-1">
+                  Generated independently, before your review. Not a diagnosis — the doctor is the final authority.
+                  {row.shadow.red_flag_urgency_override && (
+                    <span className="ml-1 text-amber-700 dark:text-amber-300">⚠ Urgency raised by the red-flag safety layer.</span>
+                  )}
+                </div>
+
+                {/* Top-3 differential diagnoses */}
+                {row.shadow.differential_diagnoses?.length > 0 && (
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+                      Differential diagnoses (top 3)
+                    </div>
+                    <ol className="space-y-1.5">
+                      {row.shadow.differential_diagnoses.slice(0, 3).map((d, i) => (
+                        <li key={i} className="flex items-start gap-2">
+                          <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-indigo-500/20 text-[11px] font-semibold text-indigo-700 dark:text-indigo-300">
+                            {i + 1}
+                          </span>
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-sm font-medium">{d.condition}</span>
+                              {typeof d.confidence === 'number' && (
+                                <span className="font-mono text-[11px] text-muted-foreground">{(d.confidence * 100).toFixed(0)}%</span>
+                              )}
+                            </div>
+                            {d.reasoning && <div className="text-xs text-muted-foreground">{d.reasoning}</div>}
+                            {d.supporting_findings && d.supporting_findings.length > 0 && (
+                              <div className="mt-0.5 flex flex-wrap gap-1">
+                                {d.supporting_findings.map((f, j) => (
+                                  <span key={j} className="rounded bg-secondary/50 px-1.5 py-0.5 text-[10px] text-muted-foreground">{f}</span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
+                )}
+
+                {/* Suggested investigations */}
+                {row.shadow.recommended_tests?.length > 0 && (
+                  <div>
+                    <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+                      <FlaskConical className="w-3.5 h-3.5" /> Suggested investigations
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {row.shadow.recommended_tests.map((t, i) => (
+                        <span key={i} className="rounded-md border bg-secondary/30 px-2 py-0.5 text-xs">{t}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* MO-only medication hints */}
+                {row.shadow.recommended_medications?.length > 0 && (
+                  <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-2.5">
+                    <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-amber-700 dark:text-amber-300 mb-1">
+                      <Shield className="w-3.5 h-3.5" /> Suggested medications · MO-only · NOT shared with patient
+                    </div>
+                    <ul className="space-y-0.5">
+                      {row.shadow.recommended_medications.map((m, i) => (
+                        <li key={i} className="font-mono text-xs">• {m}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Referral recommendation */}
+                <div className="flex items-start gap-2 text-sm">
+                  <ArrowUpRight className={cn('w-4 h-4 mt-0.5', row.shadow.referral_recommended ? 'text-red-600 dark:text-red-300' : 'text-muted-foreground')} />
+                  <div>
+                    <span className="font-medium">
+                      {row.shadow.referral_recommended ? 'Referral recommended' : 'No referral recommended'}
+                    </span>
+                    {row.shadow.referral_reason && (
+                      <span className="text-muted-foreground"> — {row.shadow.referral_reason}</span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Missing information */}
+                {row.shadow.missing_information?.length > 0 && (
+                  <div className="rounded-lg border border-dashed bg-muted/40 p-2.5">
+                    <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+                      <HelpCircle className="w-3.5 h-3.5" /> Missing information (raises uncertainty)
+                    </div>
+                    <ul className="text-xs text-muted-foreground list-disc pl-4 space-y-0.5">
+                      {row.shadow.missing_information.map((m, i) => <li key={i}>{m}</li>)}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Doctor decision: Ignore / Accept / Edit */}
+                {(() => {
+                  const decided = localDecision?.action ?? (row.shadow.doctor_action !== 'pending' ? row.shadow.doctor_action : null);
+                  if (decided && !editMode) {
+                    return (
+                      <div className="flex items-center gap-2 border-t pt-2 text-sm">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                        <span className="font-medium capitalize">Doctor {decided}</span>
+                        <span className="text-xs text-muted-foreground">— the doctor's decision overrides the AI.</span>
+                        <button
+                          onClick={() => { setEditMode(true); setEditReferral(!!row.shadow!.referral_recommended); setEditUrgency((row.shadow!.urgency as any) ?? 'Urgent'); }}
+                          className="ml-auto text-xs px-2 py-1 rounded-md border hover:bg-secondary/60"
+                        >
+                          Change
+                        </button>
+                      </div>
+                    );
+                  }
+                  if (editMode) {
+                    return (
+                      <div className="border-t pt-3 space-y-2">
+                        <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Doctor's final decision</div>
+                        <label className="flex items-center gap-2 text-sm">
+                          <input type="checkbox" checked={editReferral} onChange={(e) => setEditReferral(e.target.checked)} />
+                          Refer the patient
+                        </label>
+                        <div className="flex items-center gap-2 text-sm">
+                          <span className="text-muted-foreground">Urgency:</span>
+                          {(['Routine', 'Urgent', 'Emergency'] as const).map((u) => (
+                            <button
+                              key={u}
+                              onClick={() => setEditUrgency(u)}
+                              className={cn('text-xs px-2 py-1 rounded-md border', editUrgency === u ? 'bg-indigo-500/15 border-indigo-500/40 text-indigo-700 dark:text-indigo-300' : 'hover:bg-secondary/60')}
+                            >
+                              {u}
+                            </button>
+                          ))}
+                        </div>
+                        <textarea
+                          value={editNotes}
+                          onChange={(e) => setEditNotes(e.target.value)}
+                          placeholder="Notes (what you changed and why)…"
+                          className="w-full text-sm rounded-md border bg-background p-2 min-h-[60px]"
+                        />
+                        <div className="flex items-center gap-2">
+                          <button
+                            disabled={reviewing}
+                            onClick={() => submitShadowReview('edited', { doctor_referral_decision: editReferral, doctor_urgency: editUrgency, doctor_notes: editNotes })}
+                            className="text-sm px-3 py-1.5 rounded-md bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
+                          >
+                            Save decision
+                          </button>
+                          <button onClick={() => setEditMode(false)} className="text-sm px-3 py-1.5 rounded-md border hover:bg-secondary/60">Cancel</button>
+                        </div>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div className="flex items-center gap-2 border-t pt-2">
+                      <span className="text-xs text-muted-foreground mr-auto">Your call:</span>
+                      <button
+                        disabled={reviewing}
+                        onClick={() => submitShadowReview('ignored')}
+                        className="inline-flex items-center gap-1 text-sm px-2.5 py-1.5 rounded-md border hover:bg-secondary/60 disabled:opacity-50"
+                      >
+                        <Ban className="w-3.5 h-3.5" /> Ignore
+                      </button>
+                      <button
+                        disabled={reviewing}
+                        onClick={() => { setEditMode(true); setEditReferral(!!row.shadow!.referral_recommended); setEditUrgency((row.shadow!.urgency as any) ?? 'Urgent'); }}
+                        className="inline-flex items-center gap-1 text-sm px-2.5 py-1.5 rounded-md border hover:bg-secondary/60 disabled:opacity-50"
+                      >
+                        <Pencil className="w-3.5 h-3.5" /> Edit
+                      </button>
+                      <button
+                        disabled={reviewing}
+                        onClick={() => submitShadowReview('accepted')}
+                        className="inline-flex items-center gap-1 text-sm px-2.5 py-1.5 rounded-md bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
+                      >
+                        <Check className="w-3.5 h-3.5" /> Accept
+                      </button>
+                    </div>
+                  );
+                })()}
+              </div>
             )}
           </div>
 

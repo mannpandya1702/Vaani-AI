@@ -261,6 +261,11 @@ async function main() {
 
   console.log();
   console.log(`Passed ${report.passed}/${report.total_cases}`);
+  console.log(`Emergency sensitivity ${(report.metrics.emergency_sensitivity * 100).toFixed(1)}%  (${report.metrics.emergency_total - report.metrics.emergency_missed}/${report.metrics.emergency_total} RED caught · target = 100%)`);
+  if (report.metrics.emergency_missed > 0) {
+    console.log(`  ⚠️  ${report.metrics.emergency_missed} MISSED EMERGENCY — this is the catastrophic failure mode.`);
+  }
+  console.log(`RED precision     ${(report.metrics.red_precision * 100).toFixed(1)}%  (reported, not gated)`);
   console.log(`Band exact-match  ${(report.metrics.band_exact_match_pct * 100).toFixed(1)}%  (target ≥ 92%)`);
   console.log(`Red-flag recall   ${(report.metrics.red_flag_recall * 100).toFixed(1)}%  (target ≥ 98%)`);
   console.log(`Red-flag precision ${(report.metrics.red_flag_precision * 100).toFixed(1)}%  (target ≥ 75%)`);
@@ -271,7 +276,10 @@ async function main() {
   // CI gate
   const m = report.metrics;
   const t = report.targets;
-  const fail = m.band_exact_match_pct < t.band_exact_match_pct
+  // Emergency sensitivity is the HARD gate — any missed emergency fails CI.
+  // RED precision is intentionally NOT gated (we accept false alarms).
+  const fail = m.emergency_sensitivity < t.emergency_sensitivity
+    || m.band_exact_match_pct < t.band_exact_match_pct
     || m.red_flag_recall < t.red_flag_recall
     || m.red_flag_precision < t.red_flag_precision
     || m.label_match_pct < t.label_match_pct
