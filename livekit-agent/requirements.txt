@@ -1,0 +1,20 @@
+# Vaani-AI LiveKit Agents voice worker — pinned to the current 1.x line.
+# Tested API surface: livekit-agents 1.6.x (latest 1.6.4, 2026-06-24).
+#
+# The `livekit-agents[...]` extras pull the matching plugin packages so their
+# versions stay locked to the core agents version (avoids ABI drift):
+#   openai        -> livekit-plugins-openai   (we point its LLM at the proxy)
+#   silero        -> livekit-plugins-silero   (VAD)
+#   deepgram      -> livekit-plugins-deepgram (STT FALLBACK only)
+#   turn-detector -> livekit-plugins-turn-detector (multilingual end-of-turn)
+livekit-agents[openai,silero,deepgram,turn-detector]~=1.6
+
+# Sarvam Saarika (STT) + Bulbul (TTS) — the production Indic voice stack.
+# Maintained by LiveKit; version tracks the core (1.6.4 at time of writing).
+livekit-plugins-sarvam~=1.6
+
+# Async HTTP for the Supabase Edge Function webhooks (tools).
+aiohttp>=3.9
+
+# Load .env in local dev (no-op when env is injected by the platform).
+python-dotenv>=1.0

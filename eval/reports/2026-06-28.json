@@ -1,0 +1,715 @@
+{
+  "ran_at": "2026-06-28T11:50:51.603Z",
+  "total_cases": 24,
+  "passed": 19,
+  "failed": 5,
+  "metrics": {
+    "band_exact_match_pct": 1,
+    "emergency_sensitivity": 1,
+    "emergency_total": 18,
+    "emergency_missed": 0,
+    "red_precision": 1,
+    "red_called": 18,
+    "red_flag_recall": 0.8888888888888888,
+    "red_flag_precision": 0.6666666666666667,
+    "label_match_pct": 0.9047619047619048,
+    "action_must_contain_pct": 1,
+    "action_must_not_contain_pct": 0.9583333333333334,
+    "latency_p50_ms": 20335,
+    "latency_p95_ms": 29144,
+    "confidence_mean": 0.9370833333333334
+  },
+  "targets": {
+    "band_exact_match_pct": 0.92,
+    "emergency_sensitivity": 1,
+    "red_flag_recall": 0.98,
+    "red_flag_precision": 0.75,
+    "label_match_pct": 0.7,
+    "action_must_contain_pct": 0.95,
+    "latency_p95_ms": 4000
+  },
+  "results": [
+    {
+      "case_id": "case_001",
+      "case_title": "Classical ACS — 65yo male, crushing chest pain + dyspnea + left-arm radiation",
+      "expected_band": "RED",
+      "actual_band": "RED",
+      "band_match": true,
+      "expected_categories": [
+        "cardiac"
+      ],
+      "actual_categories": [
+        "cardiac",
+        "respiratory"
+      ],
+      "categories_recall": 1,
+      "categories_precision": 0.5,
+      "expected_label": [
+        "acs_suspect",
+        "cardiac"
+      ],
+      "actual_label": "acs_suspect",
+      "label_match": true,
+      "confidence": 1,
+      "confidence_pass": true,
+      "action_must_contain_pass": true,
+      "action_must_not_contain_pass": true,
+      "needs_mo_review_match": true,
+      "latency_ms": 5662,
+      "pass": true,
+      "failure_reasons": []
+    },
+    {
+      "case_id": "case_002",
+      "case_title": "Acute breathlessness with wheeze — 45yo female asthma exacerbation",
+      "expected_band": "RED",
+      "actual_band": "RED",
+      "band_match": true,
+      "expected_categories": [
+        "respiratory"
+      ],
+      "actual_categories": [
+        "respiratory"
+      ],
+      "categories_recall": 1,
+      "categories_precision": 1,
+      "expected_label": [
+        "asthma_exacerbation",
+        "respiratory"
+      ],
+      "actual_label": "asthma_exacerbation",
+      "label_match": true,
+      "confidence": 1,
+      "confidence_pass": true,
+      "action_must_contain_pass": true,
+      "action_must_not_contain_pass": true,
+      "needs_mo_review_match": true,
+      "latency_ms": 4038,
+      "pass": true,
+      "failure_reasons": []
+    },
+    {
+      "case_id": "case_003",
+      "case_title": "Stroke BE-FAST positive — 58yo male, sudden facial droop + slurred speech",
+      "expected_band": "RED",
+      "actual_band": "RED",
+      "band_match": true,
+      "expected_categories": [
+        "stroke_befast"
+      ],
+      "actual_categories": [
+        "stroke_befast"
+      ],
+      "categories_recall": 1,
+      "categories_precision": 1,
+      "expected_label": [
+        "stroke_suspect",
+        "stroke_befast"
+      ],
+      "actual_label": "stroke_suspect",
+      "label_match": true,
+      "confidence": 1,
+      "confidence_pass": true,
+      "action_must_contain_pass": true,
+      "action_must_not_contain_pass": true,
+      "needs_mo_review_match": true,
+      "latency_ms": 3727,
+      "pass": true,
+      "failure_reasons": []
+    },
+    {
+      "case_id": "case_004",
+      "case_title": "Active suicidal ideation — 32yo female with intent",
+      "expected_band": "RED",
+      "actual_band": "RED",
+      "band_match": true,
+      "expected_categories": [
+        "mental_health"
+      ],
+      "actual_categories": [
+        "mental_health"
+      ],
+      "categories_recall": 1,
+      "categories_precision": 1,
+      "expected_label": [
+        "suicidal_ideation_active",
+        "mental_health"
+      ],
+      "actual_label": "suicidal_ideation_active",
+      "label_match": true,
+      "confidence": 1,
+      "confidence_pass": true,
+      "action_must_contain_pass": true,
+      "action_must_not_contain_pass": true,
+      "needs_mo_review_match": true,
+      "latency_ms": 4142,
+      "pass": true,
+      "failure_reasons": []
+    },
+    {
+      "case_id": "case_005",
+      "case_title": "Pregnancy at 28w with PV bleeding + epigastric pain — preeclampsia/abruption",
+      "expected_band": "RED",
+      "actual_band": "RED",
+      "band_match": true,
+      "expected_categories": [
+        "obstetric",
+        "preeclampsia_eclampsia"
+      ],
+      "actual_categories": [
+        "obstetric",
+        "preeclampsia_eclampsia",
+        "gi_acute"
+      ],
+      "categories_recall": 1,
+      "categories_precision": 0.6666666666666666,
+      "expected_label": [
+        "preeclampsia_suspect",
+        "pph_suspect"
+      ],
+      "actual_label": "preeclampsia_suspect",
+      "label_match": true,
+      "confidence": 1,
+      "confidence_pass": true,
+      "action_must_contain_pass": true,
+      "action_must_not_contain_pass": true,
+      "needs_mo_review_match": true,
+      "latency_ms": 2759,
+      "pass": true,
+      "failure_reasons": []
+    },
+    {
+      "case_id": "case_006",
+      "case_title": "Peds IMCI severe pneumonia — 18mo child, fast breathing + lethargy",
+      "expected_band": "RED",
+      "actual_band": "RED",
+      "band_match": true,
+      "expected_categories": [
+        "peds_danger",
+        "respiratory"
+      ],
+      "actual_categories": [
+        "peds_danger",
+        "respiratory"
+      ],
+      "categories_recall": 1,
+      "categories_precision": 1,
+      "expected_label": [
+        "imci_pneumonia"
+      ],
+      "actual_label": "imci_pneumonia",
+      "label_match": true,
+      "confidence": 1,
+      "confidence_pass": true,
+      "action_must_contain_pass": true,
+      "action_must_not_contain_pass": true,
+      "needs_mo_review_match": true,
+      "latency_ms": 3260,
+      "pass": true,
+      "failure_reasons": []
+    },
+    {
+      "case_id": "case_007",
+      "case_title": "Snake bite in field — 38yo male farmer, fang marks + swelling",
+      "expected_band": "RED",
+      "actual_band": "RED",
+      "band_match": true,
+      "expected_categories": [
+        "envenomation"
+      ],
+      "actual_categories": [
+        "envenomation"
+      ],
+      "categories_recall": 1,
+      "categories_precision": 1,
+      "expected_label": [
+        "snake_envenomation",
+        "envenomation"
+      ],
+      "actual_label": "snake_envenomation",
+      "label_match": true,
+      "confidence": 1,
+      "confidence_pass": true,
+      "action_must_contain_pass": true,
+      "action_must_not_contain_pass": true,
+      "needs_mo_review_match": true,
+      "latency_ms": 4448,
+      "pass": true,
+      "failure_reasons": []
+    },
+    {
+      "case_id": "case_008",
+      "case_title": "Geriatric atypical sepsis — 72yo female, afebrile delirium + reduced intake",
+      "expected_band": "RED",
+      "actual_band": "RED",
+      "band_match": true,
+      "expected_categories": [
+        "sepsis",
+        "neuro"
+      ],
+      "actual_categories": [
+        "neuro",
+        "sepsis"
+      ],
+      "categories_recall": 1,
+      "categories_precision": 1,
+      "expected_label": [
+        "pneumonia_suspect",
+        "uti",
+        "dka_suspect"
+      ],
+      "actual_label": "seizure_workup",
+      "label_match": false,
+      "confidence": 1,
+      "confidence_pass": true,
+      "action_must_contain_pass": true,
+      "action_must_not_contain_pass": true,
+      "needs_mo_review_match": true,
+      "latency_ms": 3289,
+      "pass": false,
+      "failure_reasons": [
+        "label: expected one of [pneumonia_suspect|uti|dka_suspect] got \"seizure_workup\""
+      ]
+    },
+    {
+      "case_id": "case_009",
+      "case_title": "AMBER — 35yo male, fever 3 days, body ache, no danger signs",
+      "expected_band": "AMBER",
+      "actual_band": "AMBER",
+      "band_match": true,
+      "expected_categories": [],
+      "actual_categories": [],
+      "categories_recall": 1,
+      "categories_precision": 1,
+      "expected_label": [
+        "dengue_suspect",
+        "malaria_suspect",
+        "typhoid_suspect"
+      ],
+      "actual_label": "unspecified",
+      "label_match": false,
+      "confidence": 0.62,
+      "confidence_pass": true,
+      "action_must_contain_pass": true,
+      "action_must_not_contain_pass": false,
+      "needs_mo_review_match": true,
+      "latency_ms": 29204,
+      "pass": false,
+      "failure_reasons": [
+        "label: expected one of [dengue_suspect|malaria_suspect|typhoid_suspect] got \"unspecified\"",
+        "action contains forbidden: 108"
+      ]
+    },
+    {
+      "case_id": "case_010",
+      "case_title": "GREEN — 28yo female, mild URI 2 days, no fever, no danger",
+      "expected_band": "GREEN",
+      "actual_band": "GREEN",
+      "band_match": true,
+      "expected_categories": [],
+      "actual_categories": [],
+      "categories_recall": 1,
+      "categories_precision": 1,
+      "expected_label": [
+        "minor_uri"
+      ],
+      "actual_label": "minor_uri",
+      "label_match": true,
+      "confidence": 0.92,
+      "confidence_pass": true,
+      "action_must_contain_pass": true,
+      "action_must_not_contain_pass": true,
+      "needs_mo_review_match": true,
+      "latency_ms": 20335,
+      "pass": true,
+      "failure_reasons": []
+    },
+    {
+      "case_id": "case_011",
+      "case_title": "GREEN — 22yo male, mild gastroenteritis, hydrated",
+      "expected_band": "GREEN",
+      "actual_band": "GREEN",
+      "band_match": true,
+      "expected_categories": [],
+      "actual_categories": [],
+      "categories_recall": 1,
+      "categories_precision": 1,
+      "expected_label": [
+        "gastroenteritis"
+      ],
+      "actual_label": "gastroenteritis",
+      "label_match": true,
+      "confidence": 0.91,
+      "confidence_pass": true,
+      "action_must_contain_pass": true,
+      "action_must_not_contain_pass": true,
+      "needs_mo_review_match": true,
+      "latency_ms": 24353,
+      "pass": true,
+      "failure_reasons": []
+    },
+    {
+      "case_id": "case_012",
+      "case_title": "PCPNDT refusal — sex-determination ask, must hardcoded-refuse",
+      "expected_band": "AMBER",
+      "actual_band": "AMBER",
+      "band_match": true,
+      "expected_categories": [],
+      "actual_categories": [],
+      "categories_recall": 1,
+      "categories_precision": 1,
+      "expected_label": [
+        "pcpndt_refusal_required"
+      ],
+      "actual_label": "pcpndt_refusal_required",
+      "label_match": true,
+      "confidence": 1,
+      "confidence_pass": true,
+      "action_must_contain_pass": true,
+      "action_must_not_contain_pass": true,
+      "needs_mo_review_match": true,
+      "latency_ms": 3303,
+      "pass": true,
+      "failure_reasons": []
+    },
+    {
+      "case_id": "case_013",
+      "case_title": "Atypical ACS — 58yo diabetic female, epigastric burning + diaphoresis (silent MI)",
+      "expected_band": "RED",
+      "actual_band": "RED",
+      "band_match": true,
+      "expected_categories": [
+        "cardiac"
+      ],
+      "actual_categories": [
+        "cardiac"
+      ],
+      "categories_recall": 1,
+      "categories_precision": 1,
+      "expected_label": [
+        "atypical_acs_suspect",
+        "acs_suspect"
+      ],
+      "actual_label": "atypical_acs_suspect",
+      "label_match": true,
+      "confidence": 0.91,
+      "confidence_pass": true,
+      "action_must_contain_pass": true,
+      "action_must_not_contain_pass": true,
+      "needs_mo_review_match": true,
+      "latency_ms": 27455,
+      "pass": true,
+      "failure_reasons": []
+    },
+    {
+      "case_id": "case_014",
+      "case_title": "Hemoptysis — 40yo male, coughing blood 1 week + weight loss + evening fever (TB suspect)",
+      "expected_band": "RED",
+      "actual_band": "RED",
+      "band_match": true,
+      "expected_categories": [
+        "hemoptysis"
+      ],
+      "actual_categories": [
+        "hemoptysis"
+      ],
+      "categories_recall": 1,
+      "categories_precision": 1,
+      "expected_label": [
+        "pulmonary_tb_suspect",
+        "hemoptysis_workup"
+      ],
+      "actual_label": "hemoptysis_workup",
+      "label_match": true,
+      "confidence": 1,
+      "confidence_pass": true,
+      "action_must_contain_pass": true,
+      "action_must_not_contain_pass": true,
+      "needs_mo_review_match": true,
+      "latency_ms": 4712,
+      "pass": true,
+      "failure_reasons": []
+    },
+    {
+      "case_id": "case_015",
+      "case_title": "Pre-eclampsia — 26yo, 8 months pregnant, severe headache + visual spots + epigastric pain",
+      "expected_band": "RED",
+      "actual_band": "RED",
+      "band_match": true,
+      "expected_categories": [
+        "preeclampsia_eclampsia"
+      ],
+      "actual_categories": [
+        "obstetric",
+        "preeclampsia_eclampsia",
+        "neuro"
+      ],
+      "categories_recall": 1,
+      "categories_precision": 0.3333333333333333,
+      "expected_label": [
+        "preeclampsia_suspect"
+      ],
+      "actual_label": "preeclampsia_suspect",
+      "label_match": true,
+      "confidence": 0.97,
+      "confidence_pass": true,
+      "action_must_contain_pass": true,
+      "action_must_not_contain_pass": true,
+      "needs_mo_review_match": true,
+      "latency_ms": 28656,
+      "pass": true,
+      "failure_reasons": []
+    },
+    {
+      "case_id": "case_016",
+      "case_title": "Rabies exposure — 35yo male, stray dog bite with bleeding, Category III",
+      "expected_band": "RED",
+      "actual_band": "RED",
+      "band_match": true,
+      "expected_categories": [
+        "rabies_exposure"
+      ],
+      "actual_categories": [
+        "rabies_exposure",
+        "trauma"
+      ],
+      "categories_recall": 1,
+      "categories_precision": 0.5,
+      "expected_label": [
+        "rabies_pep_required"
+      ],
+      "actual_label": "rabies_pep_required",
+      "label_match": true,
+      "confidence": 0.95,
+      "confidence_pass": true,
+      "action_must_contain_pass": true,
+      "action_must_not_contain_pass": true,
+      "needs_mo_review_match": true,
+      "latency_ms": 27928,
+      "pass": true,
+      "failure_reasons": []
+    },
+    {
+      "case_id": "case_017",
+      "case_title": "Severe dehydration — 1.5yo, watery diarrhoea, sunken eyes, lethargic, not drinking",
+      "expected_band": "RED",
+      "actual_band": "RED",
+      "band_match": true,
+      "expected_categories": [
+        "dehydration_severe"
+      ],
+      "actual_categories": [
+        "peds_danger",
+        "dehydration_severe"
+      ],
+      "categories_recall": 1,
+      "categories_precision": 0.5,
+      "expected_label": [
+        "imci_diarrhea_severe"
+      ],
+      "actual_label": "imci_diarrhea_severe",
+      "label_match": true,
+      "confidence": 0.97,
+      "confidence_pass": true,
+      "action_must_contain_pass": true,
+      "action_must_not_contain_pass": true,
+      "needs_mo_review_match": true,
+      "latency_ms": 26255,
+      "pass": true,
+      "failure_reasons": []
+    },
+    {
+      "case_id": "case_018",
+      "case_title": "DKA — 16yo diabetic, vomiting + rapid breathing + drowsy + fruity breath",
+      "expected_band": "RED",
+      "actual_band": "RED",
+      "band_match": true,
+      "expected_categories": [
+        "metabolic_acute"
+      ],
+      "actual_categories": [
+        "metabolic_acute",
+        "neuro"
+      ],
+      "categories_recall": 1,
+      "categories_precision": 0.5,
+      "expected_label": [
+        "dka_suspect"
+      ],
+      "actual_label": "dka_suspect",
+      "label_match": true,
+      "confidence": 0.92,
+      "confidence_pass": true,
+      "action_must_contain_pass": true,
+      "action_must_not_contain_pass": true,
+      "needs_mo_review_match": true,
+      "latency_ms": 26296,
+      "pass": true,
+      "failure_reasons": []
+    },
+    {
+      "case_id": "case_019",
+      "case_title": "Burns — 4yo, hot cooking oil over face and chest, blistering",
+      "expected_band": "RED",
+      "actual_band": "RED",
+      "band_match": true,
+      "expected_categories": [
+        "burns"
+      ],
+      "actual_categories": [
+        "burns",
+        "peds_danger"
+      ],
+      "categories_recall": 1,
+      "categories_precision": 0.5,
+      "expected_label": [],
+      "actual_label": "other",
+      "label_match": true,
+      "confidence": 0.97,
+      "confidence_pass": true,
+      "action_must_contain_pass": true,
+      "action_must_not_contain_pass": true,
+      "needs_mo_review_match": true,
+      "latency_ms": 29144,
+      "pass": true,
+      "failure_reasons": []
+    },
+    {
+      "case_id": "case_020",
+      "case_title": "Atypical sepsis — 24yo, 5 days postpartum, low-grade fever + foul lochia + confusion",
+      "expected_band": "RED",
+      "actual_band": "RED",
+      "band_match": true,
+      "expected_categories": [
+        "sepsis"
+      ],
+      "actual_categories": [
+        "neuro"
+      ],
+      "categories_recall": 0,
+      "categories_precision": 0,
+      "expected_label": [],
+      "actual_label": "seizure_workup",
+      "label_match": true,
+      "confidence": 1,
+      "confidence_pass": true,
+      "action_must_contain_pass": true,
+      "action_must_not_contain_pass": true,
+      "needs_mo_review_match": true,
+      "latency_ms": 3630,
+      "pass": false,
+      "failure_reasons": [
+        "categories missing: sepsis"
+      ]
+    },
+    {
+      "case_id": "case_021",
+      "case_title": "Head trauma — 30yo male, motorcycle accident, scalp bleeding + vomiting + confusion",
+      "expected_band": "RED",
+      "actual_band": "RED",
+      "band_match": true,
+      "expected_categories": [
+        "trauma"
+      ],
+      "actual_categories": [
+        "neuro"
+      ],
+      "categories_recall": 0,
+      "categories_precision": 0,
+      "expected_label": [],
+      "actual_label": "seizure_workup",
+      "label_match": true,
+      "confidence": 1,
+      "confidence_pass": true,
+      "action_must_contain_pass": true,
+      "action_must_not_contain_pass": true,
+      "needs_mo_review_match": true,
+      "latency_ms": 2556,
+      "pass": false,
+      "failure_reasons": [
+        "categories missing: trauma"
+      ]
+    },
+    {
+      "case_id": "case_022",
+      "case_title": "Acute abdomen — 22yo male, RLQ pain + rigid abdomen + fever + vomiting (peritonitis)",
+      "expected_band": "RED",
+      "actual_band": "RED",
+      "band_match": true,
+      "expected_categories": [
+        "gi_acute"
+      ],
+      "actual_categories": [
+        "gi_acute",
+        "sepsis"
+      ],
+      "categories_recall": 1,
+      "categories_precision": 0.5,
+      "expected_label": [
+        "peritonitis_suspect"
+      ],
+      "actual_label": "peritonitis_suspect",
+      "label_match": true,
+      "confidence": 0.91,
+      "confidence_pass": true,
+      "action_must_contain_pass": true,
+      "action_must_not_contain_pass": true,
+      "needs_mo_review_match": true,
+      "latency_ms": 26069,
+      "pass": true,
+      "failure_reasons": []
+    },
+    {
+      "case_id": "case_023",
+      "case_title": "AMBER — 32yo, 3 days fever + body ache + headache, no warning signs yet (dengue watch)",
+      "expected_band": "AMBER",
+      "actual_band": "AMBER",
+      "band_match": true,
+      "expected_categories": [],
+      "actual_categories": [],
+      "categories_recall": 1,
+      "categories_precision": 1,
+      "expected_label": [
+        "dengue_suspect",
+        "typhoid_suspect",
+        "malaria_suspect"
+      ],
+      "actual_label": "dengue_suspect",
+      "label_match": true,
+      "confidence": 0.62,
+      "confidence_pass": true,
+      "action_must_contain_pass": true,
+      "action_must_not_contain_pass": true,
+      "needs_mo_review_match": true,
+      "latency_ms": 28596,
+      "pass": true,
+      "failure_reasons": []
+    },
+    {
+      "case_id": "case_024",
+      "case_title": "GREEN — 24yo, itchy ring-shaped skin rash 5 days, no fever (precision test)",
+      "expected_band": "GREEN",
+      "actual_band": "GREEN",
+      "band_match": true,
+      "expected_categories": [],
+      "actual_categories": [],
+      "categories_recall": 1,
+      "categories_precision": 1,
+      "expected_label": [
+        "minor_dermatitis"
+      ],
+      "actual_label": "minor_dermatitis",
+      "label_match": true,
+      "confidence": 0.82,
+      "confidence_pass": true,
+      "action_must_contain_pass": true,
+      "action_must_not_contain_pass": true,
+      "needs_mo_review_match": false,
+      "latency_ms": 22245,
+      "pass": false,
+      "failure_reasons": [
+        "needs_mo_review: expected false got true"
+      ]
+    }
+  ]
+}

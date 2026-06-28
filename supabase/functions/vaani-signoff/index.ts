@@ -90,6 +90,22 @@ function trimPlan(plan: string, maxChars = 200): string {
   return cut.trim();  // hard cut; no ellipsis — TTS reads them as words
 }
 
+// Sarvam Bulbul rejects inputs > 500 chars (validation 400 → a SILENT soul
+// callback, the one beat the whole demo turns on). Guarantee synthesis: if the
+// assembled message is over budget, keep the soul opener (start) + closer (the
+// reassurance) and truncate the advice body in the middle at a sentence
+// boundary. Devanagari matras count as code points, so a "short" Hindi line can
+// still breach the cap — measure on the actual string, not the eye.
+const TTS_CHAR_LIMIT = 500;
+function capForTts(message: string, closer: string): string {
+  if (message.length <= TTS_CHAR_LIMIT) return message;
+  const hasCloser = closer.length > 0 && message.endsWith(closer);
+  const head = hasCloser ? message.slice(0, message.length - closer.length) : message;
+  const budget = TTS_CHAR_LIMIT - (hasCloser ? closer.length : 0);
+  const capped = (trimPlan(head, budget) + (hasCloser ? closer : '')).replace(/\s+/g, ' ').trim();
+  return capped.length <= TTS_CHAR_LIMIT ? capped : capped.slice(0, TTS_CHAR_LIMIT).trim();
+}
+
 const SARVAM_LANG_MAP: Record<string, string> = {
   hi: 'hi-IN',
   ta: 'ta-IN',
@@ -224,6 +240,10 @@ Deno.serve(async (req) => {
       ? parts.join(' ').replace(/\s+/g, ' ').trim()
       : (SOUL_FALLBACK[lang] ?? SOUL_FALLBACK.hi);
   }
+
+  // Hard-cap the message so Sarvam never 400s on length (the English-fallback
+  // path can assemble well past 500 chars). Keeps opener + closer intact.
+  message = capForTts(message, L(SOUL_CLOSER));
 
   // ── Step 4: Generate Sarvam Bulbul TTS audio ───────────────
   // Pace 0.85 = "urgent" path (Aanya §13 — slow for elderly listeners +

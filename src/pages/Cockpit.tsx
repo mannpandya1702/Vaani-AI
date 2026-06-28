@@ -1364,8 +1364,11 @@ function Me() {
     return new Date(ts).toDateString() === new Date().toDateString();
   }).length;
   const pending = rows.filter((r) => !r.soap?.mo_signed_at).length;
-  const rmpName = (import.meta as any).env?.VITE_RMP_NAME ?? 'डॉक्टर साहब';
-  const rmpReg = (import.meta as any).env?.VITE_RMP_MCI_REG ?? '—';
+  // Treat empty/whitespace env values as missing — an empty string would
+  // otherwise render a blank doctor name on-screen (Vercel "sensitive" vars
+  // read back empty but inline fine at build time; `??` only catches null).
+  const rmpName = ((import.meta as any).env?.VITE_RMP_NAME || '').trim() || 'डॉक्टर साहब';
+  const rmpReg = ((import.meta as any).env?.VITE_RMP_MCI_REG || '').trim() || '—';
   const agentPhone = (import.meta as any).env?.VITE_AGENT_PHONE_DISPLAY ?? null;
   return (
     <div className="container max-w-screen-md p-4">

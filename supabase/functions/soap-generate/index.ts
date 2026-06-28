@@ -23,6 +23,7 @@ import { supabaseAdmin } from '../_shared/supabase-admin.ts';
 import { redactPII } from '../_shared/pii-redactor.ts';
 import { claudeCall } from '../_shared/anthropic-client.ts';
 import { ICD10_CATALOGUE_PROMPT, validateIcd10 } from '../_shared/icd10-rural.ts';
+import { retrieveProtocols, formatProtocolContext } from '../_shared/rag.ts';
 
 const SYSTEM_PROMPT = `You are Vaani-AI's SOAP-note drafter for a named Registered Medical Practitioner (RMP) to review and sign. You are NOT a doctor. Your output is a structured eSanjeevani-format SOAP note in strict JSON via the emit_soap tool.
 
@@ -204,6 +205,25 @@ Deno.serve(async (req) => {
     callback_window_hint: triage.band === 'RED' ? '15-30 min' : triage.band === 'AMBER' ? '60-180 min' : '4-12 hr',
   };
 
+  // ── RAG: ground the SOAP in cited national protocols (additive) ──
+  // ADVISORY grounding for the clinician-facing note — adds [doc_id:chunk_id]
+  // citations to the assessment/plan. This does NOT touch the triage band
+  // (already decided upstream), so it carries none of the triage band-accuracy
+  // risk the eval flagged — it's pure additive value for the signing RMP.
+  // Embeds in-region (gte-small); query is digit/email-scrubbed.
+  let protocolBlock = '';
+  if (Deno.env.get('RAG_ENABLED') === 'true') {
+    const ragQuery = [
+      triage.presumptive_label ?? '',
+      (triage.red_flag_categories ?? []).join(' '),
+      triage.summary_en ?? '',
+      `age ${patient?.age_years ?? '?'} ${patient?.sex ?? ''}${patient?.pregnancy_status === 'pregnant' ? ' pregnant' : ''}`,
+      (turns ?? []).map((t: any) => t.transcript).join(' ').slice(0, 500),
+    ].filter((s) => s && String(s).trim()).join('. ');
+    const chunks = await retrieveProtocols(sb, ragQuery, 6);
+    protocolBlock = formatProtocolContext(chunks);
+  }
+
   // ── PII-redact for Claude (US-domiciled) ──────────────────────
   const { redactedText, sessionToken } = await redactPII(
     JSON.stringify(ctx),
@@ -222,7 +242,7 @@ Deno.serve(async (req) => {
     messages: [
       {
         role: 'user',
-        content: `<context>\n${redactedText}\n</context>\n\nEmit the eSanjeevani SOAP note via emit_soap. Patient preferred language code: "${lang}".`,
+        content: `${protocolBlock ? protocolBlock + '\n\n' : ''}<context>\n${redactedText}\n</context>\n\nEmit the eSanjeevani SOAP note via emit_soap. Patient preferred language code: "${lang}".`,
       },
     ],
     maxTokens: 1500,

@@ -6,6 +6,7 @@ import Auth from '@/pages/Auth';
 import Cockpit from '@/pages/Cockpit';
 import ClinicDashboard from '@/pages/ClinicDashboard';
 import AshaApp from '@/pages/AshaApp';
+import AshaLiveKit from '@/pages/AshaLiveKit';
 import NotFound from '@/pages/NotFound';
 import { RequireAuth } from '@/components/RequireAuth';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
@@ -51,6 +52,14 @@ export default function App() {
               element={
                 <RequireAuth>
                   <AshaApp />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/asha-live/*"
+              element={
+                <RequireAuth>
+                  <AshaLiveKit />
                 </RequireAuth>
               }
             />

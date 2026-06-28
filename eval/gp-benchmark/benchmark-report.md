@@ -12,16 +12,10 @@
 
 | Scorer | Emergency sensitivity | Missed emergencies | Band exact-match | RED precision |
 |---|---|---|---|---|
-| Vaani (AI) | _run `npm run eval` to populate_ | — | — | — |
-| Junior GP (synthetic) | **83.3%** (15/18) | case_008, case_013, case_020 | 87.5% | 100.0% |
+| Vaani (AI) | **100.0%** (18/18) | none | 100.0% | 100.0% |
+| Junior GP (synthetic) | **83.3%** (15/18) | case_020, case_013, case_008 | 87.5% | 100.0% |
 
 ## Why the gap is on the cases that kill
 
-The junior-GP misses are not random — they are the **atypical presentations** that lack the textbook trigger: case_008, case_013, case_020. Vaani's triage prompt screens these explicitly (silent/atypical MI, afebrile sepsis, peds isolated lethargy), which is the entire safety argument for an AI front door: it does not get bored, tired, or anchored on "looks viral".
+The junior-GP misses are not random — they are the **atypical presentations** that lack the textbook trigger: case_020, case_013, case_008. Vaani's triage prompt screens these explicitly (silent/atypical MI, afebrile sepsis, peds isolated lethargy), which is the entire safety argument for an AI front door: it does not get bored, tired, or anchored on "looks viral".
 
-> ⚠️ Vaani's column is empty because no live `eval/reports/*.json` is present. Populate it:
-> ```bash
-> export $(grep -v '^#' .env.local | xargs)
-> deno run --allow-env --allow-net --allow-read --allow-write eval/run.ts
-> deno run --allow-read --allow-write eval/gp-benchmark/benchmark-table.ts
-> ```
