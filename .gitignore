@@ -64,3 +64,5 @@ supabase/.temp/
 .env*
 livekit-agent/.venv/
 livekit-agent/.env
+__pycache__/
+*.pyc

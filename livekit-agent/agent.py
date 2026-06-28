@@ -220,6 +220,34 @@ async def _post_supabase(path: str, payload: dict) -> dict | None:
         return None
 
 
+def _collect_turns(session) -> list[dict]:
+    """Extract (role, text) pairs from the session chat history.
+
+    Defensive across livekit-agents minor versions: history items expose
+    `.role` and either `.text_content` or `.content` (str or list of parts).
+    """
+    out: list[dict] = []
+    try:
+        history = session.history
+        items = getattr(history, "items", None) or getattr(history, "messages", None) or []
+        for item in items:
+            role = getattr(item, "role", None)
+            if role not in ("user", "assistant"):
+                continue
+            text = getattr(item, "text_content", None)
+            if not text:
+                content = getattr(item, "content", None)
+                if isinstance(content, str):
+                    text = content
+                elif isinstance(content, (list, tuple)):
+                    text = " ".join(c for c in content if isinstance(c, str))
+            if text and str(text).strip():
+                out.append({"role": role, "text": str(text).strip()})
+    except Exception as exc:
+        logger.error("collect_turns failed: %s", exc)
+    return out
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # The Agent — instructions from the prompt file + the three VAPI tools
 # ─────────────────────────────────────────────────────────────────────────────
@@ -457,6 +485,25 @@ async def entrypoint(ctx: JobContext) -> None:
         vad=vad,
         turn_detection=turn_detection,
     )
+
+    # On call end — whether the agent hangs up or the caller drops — persist the
+    # transcript and fire the post-call pipeline. This is what turns a LiveKit
+    # *conversation* into a real cockpit card → SOAP → shadow → the "doctor has
+    # seen you" callback. Without it a LiveKit call leaves no clinical record.
+    async def _persist_call() -> None:
+        turns = _collect_turns(session)
+        if not turns:
+            logger.info("livekit-ingest: no turns to persist")
+            return
+        room_name = ctx.room.name or ""
+        lang = "ta" if "-ta-" in room_name else "hi"
+        res = await _post_supabase(
+            "livekit-ingest",
+            {"room": room_name, "lang": lang, "turns": turns},
+        )
+        logger.info("livekit-ingest persisted %d turns -> %s", len(turns), res)
+
+    ctx.add_shutdown_callback(_persist_call)
 
     await session.start(
         agent=VaaniAgent(session_meta={"room": ctx.room.name}),
