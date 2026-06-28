@@ -14,6 +14,7 @@
 
 import { corsHeaders, handleCorsPreflight } from '../_shared/cors.ts';
 import { supabaseAdmin } from '../_shared/supabase-admin.ts';
+import { authorizeCockpitRequest } from '../_shared/cockpit-auth.ts';
 
 const SB_URL = Deno.env.get('SUPABASE_URL');
 const MASTER_KEY = Deno.env.get('WEBHOOK_MASTER_KEY');
@@ -22,9 +23,10 @@ Deno.serve(async (req) => {
   const pre = handleCorsPreflight(req);
   if (pre) return pre;
 
-  // Anon-key bearer is fine for demo cockpit access.
-  const auth = req.headers.get('authorization') ?? '';
-  if (!auth.startsWith('Bearer ')) {
+  // Signing a clinical note is service-role (RLS-bypassing) and fires the
+  // patient callback — require a real project JWT or the master key, not just
+  // any non-empty bearer.
+  if (!authorizeCockpitRequest(req)) {
     return new Response('unauthorized', { status: 401, headers: corsHeaders });
   }
 
