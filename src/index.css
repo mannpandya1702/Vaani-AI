@@ -2,82 +2,119 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ─── Vaani Brand Tokens (HSL — Tailwind expects HSL via cssVariables) ─── */
+/* ════════════════════════════════════════════════════════════════════
+   Vaani Design System — "Bharat-clinical"
+   Warm paper · deep navy · saffron · supporting teal. One palette,
+   WCAG-AA contrast everywhere. HSL tokens (Tailwind reads via cssVariables).
+   Contrast fixes vs the old system:
+     • primary (saffron) foreground → deep navy, not white  (was unreadable)
+     • accent → deep teal that passes AA with white         (was bright green)
+     • muted-foreground darkened for crisp body text on paper
+   ════════════════════════════════════════════════════════════════════ */
 @layer base {
   :root {
-    /* Light mode — paper warm Indian off-white */
-    --background: 42 35% 96%;          /* #F7F4ED paper */
-    --foreground: 0 0% 10%;            /* #1A1A1A ink */
+    /* Surfaces — warm Indian paper */
+    --background: 40 33% 97%;          /* #F8F5EF paper */
+    --foreground: 222 38% 12%;         /* #131C2B deep navy-ink */
 
     --card: 0 0% 100%;
-    --card-foreground: 0 0% 10%;
+    --card-foreground: 222 38% 12%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 10%;
+    --popover-foreground: 222 38% 12%;
 
-    /* Primary — Vaani saffron */
-    --primary: 33 100% 55%;            /* #FF9F1C */
-    --primary-foreground: 0 0% 100%;
+    /* Primary — Vaani saffron. Foreground is NAVY (navy-on-saffron ≈ 7:1). */
+    --primary: 33 94% 51%;             /* #F79518 saffron */
+    --primary-foreground: 226 55% 13%; /* #0F1A33 navy ink */
 
-    /* Secondary — Vaani navy */
-    --secondary: 226 62% 15%;          /* #0F1B3D */
-    --secondary-foreground: 0 0% 100%;
+    /* Secondary — deep navy. Paper text on navy ≈ 14:1. */
+    --secondary: 226 56% 16%;          /* #121E40 navy */
+    --secondary-foreground: 40 33% 97%;
 
-    --muted: 42 20% 90%;
-    --muted-foreground: 0 0% 40%;
+    /* Muted — quiet surfaces + crisp secondary text */
+    --muted: 40 24% 92%;               /* #EFEAE0 */
+    --muted-foreground: 222 16% 35%;   /* #4A5363 — passes AA on paper */
 
-    --accent: 156 64% 47%;             /* #2DBE7C green */
+    /* Accent — deep teal (supporting cool), AA with white */
+    --accent: 174 58% 31%;             /* #21807A teal */
     --accent-foreground: 0 0% 100%;
 
-    --destructive: 358 75% 59%;        /* #E5484D red */
+    /* Semantics */
+    --destructive: 358 64% 49%;        /* #CE3539 red, AA with white */
     --destructive-foreground: 0 0% 100%;
+    --success: 158 62% 30%;            /* #1D7A56 green, AA with white */
+    --success-foreground: 0 0% 100%;
+    --warning: 33 92% 46%;             /* #E08410 deep amber */
+    --warning-foreground: 0 0% 100%;
 
-    --border: 42 20% 85%;
-    --input: 42 20% 85%;
-    --ring: 33 100% 55%;
+    --border: 40 16% 87%;              /* #E2DDD2 */
+    --input: 40 16% 87%;
+    --ring: 33 94% 51%;                /* saffron focus */
 
-    --radius: 0.75rem;
+    --radius: 0.8rem;
   }
 
   .dark {
-    /* Dark mode — Vaani navy first */
-    --background: 226 62% 15%;         /* #0F1B3D navy */
-    --foreground: 42 35% 96%;          /* paper */
+    --background: 226 56% 11%;         /* #0C1428 deep navy */
+    --foreground: 40 33% 95%;          /* paper */
 
-    --card: 226 50% 20%;
-    --card-foreground: 42 35% 96%;
+    --card: 226 42% 16%;               /* #18233F */
+    --card-foreground: 40 33% 95%;
 
-    --popover: 226 55% 18%;
-    --popover-foreground: 42 35% 96%;
+    --popover: 226 46% 14%;
+    --popover-foreground: 40 33% 95%;
 
-    --primary: 33 100% 55%;            /* saffron pops on navy */
-    --primary-foreground: 226 62% 15%;
+    --primary: 33 95% 56%;             /* saffron pops on navy */
+    --primary-foreground: 226 58% 11%;
 
-    --secondary: 42 35% 96%;
-    --secondary-foreground: 226 62% 15%;
+    --secondary: 226 32% 24%;
+    --secondary-foreground: 40 33% 95%;
 
-    --muted: 226 40% 25%;
-    --muted-foreground: 42 20% 70%;
+    --muted: 226 30% 21%;
+    --muted-foreground: 220 18% 73%;   /* AA on dark navy */
 
-    --accent: 156 64% 47%;
-    --accent-foreground: 226 62% 15%;
+    --accent: 174 52% 42%;
+    --accent-foreground: 226 58% 11%;
 
-    --destructive: 358 75% 59%;
+    --destructive: 358 62% 56%;
     --destructive-foreground: 0 0% 100%;
+    --success: 158 56% 44%;
+    --success-foreground: 226 58% 11%;
+    --warning: 33 92% 56%;
+    --warning-foreground: 226 58% 11%;
 
-    --border: 226 30% 30%;
-    --input: 226 30% 30%;
-    --ring: 33 100% 55%;
+    --border: 226 26% 27%;
+    --input: 226 26% 27%;
+    --ring: 33 95% 56%;
   }
 }
 
 @layer base {
   * { @apply border-border; }
+
+  html { -webkit-text-size-adjust: 100%; }
+
   body {
     @apply bg-background text-foreground;
-    font-feature-settings: 'rlig' 1, 'calt' 1;
+    font-feature-settings: 'rlig' 1, 'calt' 1, 'ss01' 1;
     -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
   }
+
+  /* Tighter, more confident headings */
+  h1, h2, h3, h4 { @apply tracking-tight; text-wrap: balance; }
+  p { text-wrap: pretty; }
+
+  /* Brand selection + accessible focus ring */
+  ::selection { background: hsl(var(--primary) / 0.28); color: hsl(var(--secondary)); }
+  :focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 2px; border-radius: 4px; }
+
+  /* Subtle, non-jarring scrollbars */
+  * { scrollbar-width: thin; scrollbar-color: hsl(var(--border)) transparent; }
+  *::-webkit-scrollbar { width: 10px; height: 10px; }
+  *::-webkit-scrollbar-thumb { background: hsl(var(--border)); border-radius: 9999px; border: 3px solid transparent; background-clip: content-box; }
+  *::-webkit-scrollbar-thumb:hover { background: hsl(var(--muted-foreground) / 0.5); background-clip: content-box; }
 
   /* Language-aware font fallback */
   [lang='hi'], [lang='mr'] { font-family: 'Hind', 'Inter', system-ui, sans-serif; }
@@ -87,22 +124,44 @@
   [lang='bn'] { font-family: 'Noto Sans Bengali', 'Inter', sans-serif; }
 }
 
-/* ─── Vaani signature components ─── */
+/* ─── Vaani signature components + premium utilities ─── */
 @layer components {
-  .vaani-bindi {
-    @apply inline-block w-3 h-3 rounded-full bg-vaani-saffron;
-  }
-  .vaani-bindi-pulse {
-    @apply vaani-bindi animate-saffron-pulse;
-  }
-  .triage-dot {
-    @apply inline-block w-2.5 h-2.5 rounded-full;
-  }
+  .vaani-bindi { @apply inline-block w-3 h-3 rounded-full bg-vaani-saffron; }
+  .vaani-bindi-pulse { @apply vaani-bindi animate-saffron-pulse; }
+
+  .triage-dot { @apply inline-block w-2.5 h-2.5 rounded-full; }
   .triage-dot-red    { @apply triage-dot bg-vaani-red animate-red-pulse; }
   .triage-dot-amber  { @apply triage-dot bg-vaani-saffron; }
   .triage-dot-green  { @apply triage-dot bg-vaani-green; }
 
-  .glass-card {
-    @apply bg-card/80 backdrop-blur-md border border-border/50 shadow-sm;
+  /* Frosted card */
+  .glass-card { @apply bg-card/80 backdrop-blur-md border border-border/60 shadow-sm; }
+
+  /* Elevated surface with a soft, layered shadow (premium depth) */
+  .vaani-elevated {
+    @apply bg-card border border-border/70 rounded-2xl;
+    box-shadow: 0 1px 2px hsl(222 38% 12% / 0.04), 0 8px 24px -12px hsl(222 38% 12% / 0.12);
+  }
+
+  /* Saffron→amber brand gradient text */
+  .vaani-gradient-text {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(100deg, hsl(33 94% 56%), hsl(40 96% 62%));
+  }
+}
+
+@layer utilities {
+  /* Hero mesh — warm saffron + teal glows over navy. Use behind dark heroes. */
+  .vaani-mesh {
+    background-color: hsl(var(--secondary));
+    background-image:
+      radial-gradient(42rem 42rem at 12% -10%, hsl(33 94% 51% / 0.20), transparent 60%),
+      radial-gradient(38rem 38rem at 95% 8%, hsl(174 60% 38% / 0.18), transparent 60%),
+      radial-gradient(34rem 34rem at 70% 100%, hsl(33 94% 51% / 0.10), transparent 60%);
+  }
+  /* Quiet dotted grid for light section backgrounds */
+  .vaani-dot-grid {
+    background-image: radial-gradient(hsl(var(--foreground) / 0.05) 1px, transparent 1px);
+    background-size: 22px 22px;
   }
 }
