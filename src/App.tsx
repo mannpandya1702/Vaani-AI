@@ -47,11 +47,12 @@ export default function App() {
                 </RequireAuth>
               }
             />
+            {/* /asha is now the LiveKit (India) voice stack. */}
             <Route
               path="/asha/*"
               element={
                 <RequireAuth>
-                  <AshaApp />
+                  <AshaLiveKit />
                 </RequireAuth>
               }
             />
@@ -60,6 +61,15 @@ export default function App() {
               element={
                 <RequireAuth>
                   <AshaLiveKit />
+                </RequireAuth>
+              }
+            />
+            {/* VAPI preserved as an instant fallback. */}
+            <Route
+              path="/asha-vapi/*"
+              element={
+                <RequireAuth>
+                  <AshaApp />
                 </RequireAuth>
               }
             />
