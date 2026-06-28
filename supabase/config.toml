@@ -142,3 +142,6 @@ verify_jwt = false
 
 [functions.livekit-token]
 verify_jwt = false
+
+[functions.livekit-ingest]
+verify_jwt = false
