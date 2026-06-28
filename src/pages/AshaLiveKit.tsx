@@ -79,67 +79,87 @@ export default function AshaLiveKit() {
     setPhase('ended');
   }
 
+  const connecting = phase === 'connecting';
+  const connected = phase === 'connected';
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-b from-teal-50 to-white p-6">
-      <div className="w-full max-w-sm rounded-2xl border bg-white shadow-sm p-6 text-center">
-        <div className="text-xs font-semibold tracking-widest text-teal-600 uppercase">वाणी · Vaani</div>
-        <h1 className="mt-1 text-xl font-semibold">Talk to Vaani Didi</h1>
-        <p className="mt-1 text-xs text-muted-foreground">
-          LiveKit voice stack · Sarvam STT/TTS · doctor-safe AI
+    <div className="min-h-screen vaani-mesh text-vaani-paper flex flex-col items-center justify-center p-6">
+      <div className="w-full max-w-sm vaani-elevated text-foreground p-7 text-center">
+        <div className="flex items-center justify-center gap-2 text-xs font-semibold tracking-widest uppercase text-muted-foreground">
+          <span className="vaani-bindi" aria-hidden /> वाणी · Vaani
+        </div>
+
+        {/* mic orb */}
+        <div className="mt-6 flex justify-center">
+          <div
+            className={[
+              'relative w-24 h-24 rounded-full flex items-center justify-center bg-gradient-to-br from-primary to-warning',
+              connected ? 'animate-saffron-pulse' : '',
+            ].join(' ')}
+          >
+            {connecting
+              ? <Loader2 className="w-9 h-9 text-primary-foreground animate-spin" />
+              : <Mic className="w-9 h-9 text-primary-foreground" />}
+            {connected && <span className="absolute -bottom-0.5 -right-0.5 w-5 h-5 rounded-full bg-vaani-green ring-4 ring-card" />}
+          </div>
+        </div>
+
+        <h1 className="mt-5 text-2xl font-bold tracking-tight">Talk to Vaani Didi</h1>
+        <p className="mt-1.5 text-sm text-muted-foreground leading-relaxed">
+          She screens in your language. A registered doctor reviews &amp; signs every note.
         </p>
 
         {/* language toggle (disabled mid-call) */}
-        <div className="mt-4 inline-flex rounded-lg border p-0.5 text-sm">
+        <div className="mt-5 inline-flex rounded-xl border border-border bg-muted/40 p-1 text-sm">
           {(['hi', 'ta'] as Lang[]).map((l) => (
             <button
               key={l}
-              disabled={phase === 'connecting' || phase === 'connected'}
+              disabled={connecting || connected}
               onClick={() => setLang(l)}
               className={[
-                'px-3 py-1 rounded-md transition inline-flex items-center gap-1',
-                lang === l ? 'bg-teal-600 text-white' : 'text-muted-foreground hover:bg-secondary/60',
-                (phase === 'connecting' || phase === 'connected') ? 'opacity-60' : '',
+                'px-4 py-1.5 rounded-lg transition inline-flex items-center gap-1.5 font-medium',
+                lang === l ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
+                (connecting || connected) ? 'opacity-60' : '',
               ].join(' ')}
             >
-              <Globe className="w-3 h-3" /> {l === 'hi' ? 'हिंदी' : 'தமிழ்'}
+              <Globe className="w-3.5 h-3.5" /> {l === 'hi' ? 'हिंदी' : 'தமிழ்'}
             </button>
           ))}
         </div>
 
         <div className="mt-6">
-          {phase === 'connected' ? (
+          {connected ? (
             <button
               onClick={stop}
-              className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-red-600 text-white py-3 font-semibold hover:bg-red-700"
+              className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-destructive text-destructive-foreground py-3.5 font-semibold hover:brightness-105 transition"
             >
               <PhoneOff className="w-4 h-4" /> End call
             </button>
           ) : (
             <button
               onClick={start}
-              disabled={phase === 'connecting'}
-              className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-teal-600 text-white py-3 font-semibold hover:bg-teal-700 disabled:opacity-60"
+              disabled={connecting}
+              className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-primary text-primary-foreground py-3.5 font-semibold shadow-lg shadow-primary/25 hover:brightness-105 transition disabled:opacity-60"
             >
-              {phase === 'connecting'
+              {connecting
                 ? (<><Loader2 className="w-4 h-4 animate-spin" /> Connecting…</>)
                 : (<><Mic className="w-4 h-4" /> Start call</>)}
             </button>
           )}
         </div>
 
-        <div className="mt-4 h-5 text-xs">
-          {phase === 'connected' && (
-            <span className={agentJoined ? 'text-teal-600' : 'text-amber-600'}>
-              {agentJoined ? '● Vaani is on the line — speak now' : '● connected — waiting for Vaani to join…'}
+        <div className="mt-4 h-5 text-xs font-medium">
+          {connected && (
+            <span className={agentJoined ? 'text-accent' : 'text-warning'}>
+              {agentJoined ? '● Vaani is on the line — speak now' : '● connected — waiting for Vaani…'}
             </span>
           )}
           {phase === 'ended' && <span className="text-muted-foreground">Call ended.</span>}
-          {phase === 'error' && <span className="text-red-600">Error: {error}</span>}
+          {phase === 'error' && <span className="text-destructive">Error: {error}</span>}
         </div>
       </div>
 
-      <p className="mt-4 text-[10px] text-muted-foreground max-w-sm text-center">
-        Vaani screens and listens in your language; a registered doctor reviews and signs every note.
+      <p className="mt-5 text-[11px] text-vaani-paper/60 max-w-sm text-center">
+        LiveKit voice · Sarvam Indic STT/TTS · DPDP-compliant · no AI signs a note.
       </p>
       {/* agent audio sinks mount here */}
       <div ref={audioBoxRef} className="hidden" />
