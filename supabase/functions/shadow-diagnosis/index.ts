@@ -29,6 +29,7 @@ import { verifyBearer } from '../_shared/constant-time-compare.ts';
 import { supabaseAdmin } from '../_shared/supabase-admin.ts';
 import { redactPII } from '../_shared/pii-redactor.ts';
 import { claudeCall } from '../_shared/anthropic-client.ts';
+import { retrieveProtocols, formatProtocolContext } from '../_shared/rag.ts';
 
 const PROMPT_VERSION = 'shadow_v1';
 
@@ -198,6 +199,23 @@ Deno.serve(async (req) => {
     })),
   };
 
+  // ── RAG: ground the differential in cited national protocols (additive) ──
+  // ADVISORY grounding for the shadow opinion — adds [doc_id:chunk_id] citations
+  // to the differential/recommended workup. Does not touch triage or the
+  // deterministic urgency override below, so it's pure additive value.
+  let protocolBlock = '';
+  if (Deno.env.get('RAG_ENABLED') === 'true') {
+    const ragQuery = [
+      triage.presumptive_label ?? '',
+      (triage.red_flag_categories ?? []).join(' '),
+      triage.reasoning ?? '',
+      `age ${patient?.age_years ?? '?'} ${patient?.sex ?? ''}${patient?.pregnancy_status === 'pregnant' ? ' pregnant' : ''}`,
+      (turns ?? []).map((t: any) => t.transcript).join(' ').slice(0, 500),
+    ].filter((s) => s && String(s).trim()).join('. ');
+    const chunks = await retrieveProtocols(sb, ragQuery, 6);
+    protocolBlock = formatProtocolContext(chunks);
+  }
+
   // ── PII-redact for Claude (US-domiciled) ──────────────────────
   const { redactedText, sessionToken } = await redactPII(
     JSON.stringify(ctx),
@@ -216,7 +234,7 @@ Deno.serve(async (req) => {
     messages: [
       {
         role: 'user',
-        content: `<context>\n${redactedText}\n</context>\n\nProduce the AI shadow clinical opinion via emit_shadow_opinion. Remember: differential diagnoses only (never a final diagnosis), calibrated confidence, explain WHY, and list missing_information honestly.`,
+        content: `${protocolBlock ? protocolBlock + '\n\n' : ''}<context>\n${redactedText}\n</context>\n\nProduce the AI shadow clinical opinion via emit_shadow_opinion. Remember: differential diagnoses only (never a final diagnosis), calibrated confidence, explain WHY, and list missing_information honestly.`,
       },
     ],
     maxTokens: 1500,

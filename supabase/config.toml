@@ -133,3 +133,9 @@ verify_jwt = false
 
 [functions.vapi-custom-llm]
 verify_jwt = false
+
+[functions.rag-ingest]
+verify_jwt = false
+
+[functions.rag-retrieve]
+verify_jwt = false

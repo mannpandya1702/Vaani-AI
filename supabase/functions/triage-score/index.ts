@@ -19,6 +19,7 @@ import { supabaseAdmin } from '../_shared/supabase-admin.ts';
 import { redactPII } from '../_shared/pii-redactor.ts';
 import { claudeCall } from '../_shared/anthropic-client.ts';
 import { checkRefusal, scriptForLang } from '../_shared/refusal-scripts.ts';
+import { retrieveProtocols, formatProtocolContext } from '../_shared/rag.ts';
 
 const SYSTEM_PROMPT = `You are Vaani-AI's clinical triage scorer for rural India primary care. You assist a Registered Medical Practitioner (RMP). You are NOT a doctor. You NEVER provide a diagnosis. Your output is a presumptive_label + recommended_action, in strict JSON.
 
@@ -252,6 +253,29 @@ Deno.serve(async (req) => {
     }));
   }
 
+  // ── RAG: retrieve supporting clinical protocols (additive, flag-gated) ──
+  // OFF by default in TRIAGE. A 24-case eval (2026-06-28) showed RAG in the
+  // triage band decision regressed band exact-match 100% → 95.8% (one febrile
+  // case downgraded AMBER→GREEN) with no offsetting gain — emergency
+  // sensitivity stayed 100% either way. Per our architecture thesis, retrieval
+  // stays OUT of the safety-critical band decision; it's used additively in
+  // soap-generate + shadow-diagnosis instead. Kept here behind a distinct flag
+  // for future experiments only. The rule layer (forceRedBand) has already
+  // returned for any red flag, so this could never lower a rules-forced RED.
+  let protocolBlock = '';
+  if (Deno.env.get('RAG_TRIAGE_ENABLED') === 'true') {
+    const ragQuery = [
+      (ctx.presenting_complaints ?? [])
+        .map((c: any) => `${c.complaint_code ?? ''} ${(c.associated_symptoms ?? []).join(' ')}`).join('; '),
+      (ctx.red_flag_events_detected ?? []).map((r: any) => r.category).join(' '),
+      `age ${patient?.age_years ?? '?'} ${patient?.sex ?? ''}${patient?.pregnancy_status === 'pregnant' ? ' pregnant' : ''}`,
+      fullTranscript.slice(0, 600),
+    ].filter((s) => s && s.trim()).join('. ');
+    const chunks = await retrieveProtocols(sb, ragQuery, 6);
+    protocolBlock = formatProtocolContext(chunks);
+    if (chunks.length) ctx._retrieved_protocols = chunks.map((c) => `${c.doc_id}:${c.id}`);
+  }
+
   // 5. PII-redact for Claude
   const { redactedText, sessionToken } = await redactPII(
     JSON.stringify(ctx),
@@ -268,7 +292,7 @@ Deno.serve(async (req) => {
   const claudeResp = await claudeCall({
     system: SYSTEM_PROMPT,
     messages: [
-      { role: 'user', content: `<context>\n${redactedText}\n</context>\n\nEmit the triage decision via emit_triage tool.` },
+      { role: 'user', content: `${protocolBlock ? protocolBlock + '\n\n' : ''}<context>\n${redactedText}\n</context>\n\nEmit the triage decision via emit_triage tool.` },
     ],
     maxTokens: 1024,
     temperature: 0.1,
