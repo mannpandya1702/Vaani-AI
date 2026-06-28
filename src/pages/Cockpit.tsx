@@ -505,9 +505,14 @@ function TriageCard({ row, onClick, tag = null, busy = false, onApprove, onTag }
               <Languages className="w-3 h-3" />
               {lang.toUpperCase()}
             </span>
-            {age != null && (
+            {(row.patient?.sex || age != null) && (
               <span className="inline-flex items-center gap-1 rounded-full bg-secondary/60 px-2 py-0.5">
-                {row.patient?.sex ?? '?'} · {age}y
+                {[row.patient?.sex, age != null ? `${age}y` : null].filter(Boolean).join(' · ')}
+              </span>
+            )}
+            {row.patient?.pregnancy_status && ['pregnant', 'postpartum'].includes(row.patient.pregnancy_status) && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-pink-500/10 text-pink-700 dark:text-pink-300 px-2 py-0.5">
+                {row.patient.pregnancy_status === 'pregnant' ? 'Pregnant' : 'Postpartum'}
               </span>
             )}
             {reds.slice(0, 3).map((r) => (

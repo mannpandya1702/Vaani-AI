@@ -131,7 +131,7 @@ Deno.serve(async (req) => {
   // ── Step 1: Verify SOAP exists + signed (and read the plan) ──
   const { data: soap, error: soapErr } = await sb
     .from('soap_notes')
-    .select('id, call_id, patient_id, tenant_id, lang, mo_signed_at, mo_user_id, plan, subjective, safety_net_text, investigations_advised')
+    .select('id, call_id, patient_id, tenant_id, lang, mo_signed_at, mo_user_id, plan, subjective, safety_net_text, investigations_advised, patient_callback_message')
     .eq('id', soapId)
     .single();
   if (soapErr || !soap) return jsonErr(404, 'soap_not_found', soapErr?.message);
@@ -200,19 +200,30 @@ Deno.serve(async (req) => {
   }
 
   const L = (m: Record<string, string>) => m[lang] ?? m.hi;
-  const planSnippet = trimPlan(planText, 360);
-  const parts: string[] = [L(SOUL_OPENER)];
-  const recap = trimPlan(subjective, 150);
-  if (recap) parts.push(`${L(RECAP_LEAD)}${recap}.`);
-  if (planSnippet) parts.push(`${L(PLAN_LEAD)}${planSnippet}`);
-  if (investigations.length) parts.push(`${L(TEST_LEAD)}${investigations.slice(0, 3).join(', ')}.`);
-  const watch = trimPlan(safetyNet, 160);
-  if (watch) parts.push(`${L(WATCH_LEAD)}${watch}`);
-  parts.push(L(SOUL_CLOSER));
-  // Need at least opener + one substantive section + closer to be worth it.
-  const message = parts.length > 2
-    ? parts.join(' ').replace(/\s+/g, ' ').trim()
-    : (SOUL_FALLBACK[lang] ?? SOUL_FALLBACK.hi);
+  // PREFER the patient-LANGUAGE callback body (soap-generate rule 13). Before
+  // this, vaani-signoff read the ENGLISH Plan aloud, so the patient heard
+  // English. patient_callback_message is the same advice in their tongue.
+  const patientBody = scrub((soap as any).patient_callback_message);
+  let message: string;
+  if (patientBody && patientBody.trim().length >= 8) {
+    message = [L(SOUL_OPENER), patientBody.trim(), L(SOUL_CLOSER)]
+      .join(' ').replace(/\s+/g, ' ').trim();
+  } else {
+    // Fallback for older notes with no patient-language body: assemble from the
+    // (English) Plan fields as before. Better than silence.
+    const planSnippet = trimPlan(planText, 360);
+    const parts: string[] = [L(SOUL_OPENER)];
+    const recap = trimPlan(subjective, 150);
+    if (recap) parts.push(`${L(RECAP_LEAD)}${recap}.`);
+    if (planSnippet) parts.push(`${L(PLAN_LEAD)}${planSnippet}`);
+    if (investigations.length) parts.push(`${L(TEST_LEAD)}${investigations.slice(0, 3).join(', ')}.`);
+    const watch = trimPlan(safetyNet, 160);
+    if (watch) parts.push(`${L(WATCH_LEAD)}${watch}`);
+    parts.push(L(SOUL_CLOSER));
+    message = parts.length > 2
+      ? parts.join(' ').replace(/\s+/g, ' ').trim()
+      : (SOUL_FALLBACK[lang] ?? SOUL_FALLBACK.hi);
+  }
 
   // ── Step 4: Generate Sarvam Bulbul TTS audio ───────────────
   // Pace 0.85 = "urgent" path (Aanya §13 — slow for elderly listeners +

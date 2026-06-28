@@ -49,6 +49,45 @@ console.log('\n━━━ 1. VAPI assistant config (Hindi) ━━━');
   }
 }
 
+console.log('\n━━━ 1b. VAPI tool wiring (data-writing tools need a server.url) ━━━');
+{
+  // A tool whose function writes to our DB MUST carry a tool-level server.url,
+  // else VAPI has nowhere to deliver the tool call and the row is never written
+  // (this is exactly how capture_consent silently produced consents=0).
+  const REQUIRED: Record<string, string> = {
+    capture_consent: 'consent-capture',
+    escalate_to_doctor: 'red-flag-check',
+  };
+  const r = await fetch(`https://api.vapi.ai/assistant/${ASSISTANT_HI}`, {
+    headers: { Authorization: `Bearer ${PRIVATE}` },
+  });
+  if (!r.ok) {
+    bad(`fetch assistant for tools: ${r.status}`);
+  } else {
+    const a = await r.json();
+    const toolIds: string[] = a.model?.toolIds ?? [];
+    if (!toolIds.length) bad('assistant has no toolIds — capture_consent / escalate_to_doctor not attached');
+    const seen = new Set<string>();
+    for (const id of toolIds) {
+      const tr = await fetch(`https://api.vapi.ai/tool/${id}`, { headers: { Authorization: `Bearer ${PRIVATE}` } });
+      if (!tr.ok) { warn(`tool ${id.slice(0, 8)} fetch ${tr.status}`); continue; }
+      const t = await tr.json();
+      const name = t.function?.name ?? t.type ?? '(unknown)';
+      seen.add(name);
+      const need = REQUIRED[name];
+      if (need) {
+        if (t.server?.url?.includes(need)) ok(`${name} → ${need} ✓`);
+        else bad(`${name} has no server.url → ${need} (tool call has nowhere to land; DB row never written)`);
+      } else {
+        ok(`${name} (no server.url required)`);
+      }
+    }
+    for (const [name, need] of Object.entries(REQUIRED)) {
+      if (!seen.has(name)) bad(`required tool '${name}' (→ ${need}) not attached to assistant`);
+    }
+  }
+}
+
 console.log('\n━━━ 2. VAPI phone numbers ━━━');
 {
   const r = await fetch('https://api.vapi.ai/phone-number', {

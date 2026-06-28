@@ -12,17 +12,49 @@
 
 import { corsHeaders, handleCorsPreflight } from '../_shared/cors.ts';
 import { supabaseAdmin } from '../_shared/supabase-admin.ts';
+import { verifyBearer } from '../_shared/constant-time-compare.ts';
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const ACTIONS = ['ignored', 'accepted', 'edited'];
 const URGENCIES = ['Routine', 'Urgent', 'Emergency'];
+
+// Project ref derived from the injected SUPABASE_URL (e.g. https://<ref>.supabase.co).
+const PROJECT_REF = (Deno.env.get('SUPABASE_URL') ?? '').match(/https?:\/\/([a-z0-9]+)\.supabase\./)?.[1] ?? '';
+const ALLOWED_ROLES = new Set(['anon', 'authenticated', 'service_role']);
+
+// This path does an RLS-bypassing service-role write of the doctor's recorded
+// decision, so a bare "has a Bearer" check is not enough. Authorize on EITHER:
+//   (a) a constant-time WEBHOOK_MASTER_KEY match (server callers), or
+//   (b) a Supabase JWT issued for THIS project — ref matches, role is an
+//       expected Supabase role, and the token is not expired.
+// (b) accepts the cockpit's anon key regardless of value/rotation (we can't
+// rely on the injected SUPABASE_ANON_KEY equalling the key the browser sends),
+// while still rejecting empty / garbage / wrong-project bearers.
+function authorized(req: Request): boolean {
+  if (verifyBearer(req, Deno.env.get('WEBHOOK_MASTER_KEY'))) return true;
+  const auth = req.headers.get('authorization') ?? '';
+  if (!auth.startsWith('Bearer ')) return false;
+  const parts = auth.slice(7).trim().split('.');
+  if (parts.length !== 3) return false;
+  try {
+    const p = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+    if (PROJECT_REF && p.ref !== PROJECT_REF) return false;
+    if (!ALLOWED_ROLES.has(p.role)) return false;
+    if (typeof p.exp === 'number' && p.exp * 1000 < Date.now()) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 Deno.serve(async (req) => {
   const pre = handleCorsPreflight(req);
   if (pre) return pre;
 
-  // Anon-key bearer is fine for the demo cockpit (same posture as soap-sign).
-  const auth = req.headers.get('authorization') ?? '';
-  if (!auth.startsWith('Bearer ')) {
+  // (soap-sign carries the older bare-Bearer posture and should be lifted to
+  // this same gate — roadmap.)
+  if (!authorized(req)) {
     return new Response('unauthorized', { status: 401, headers: corsHeaders });
   }
 
@@ -55,7 +87,7 @@ Deno.serve(async (req) => {
   if (body.doctor_final_differential != null) {
     update.doctor_final_differential = body.doctor_final_differential;
   }
-  if (typeof body.doctor_user_id === 'string') {
+  if (typeof body.doctor_user_id === 'string' && UUID_RE.test(body.doctor_user_id)) {
     update.doctor_user_id = body.doctor_user_id;
   }
 

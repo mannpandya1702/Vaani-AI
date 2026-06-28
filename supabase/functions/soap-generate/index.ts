@@ -39,6 +39,7 @@ const SYSTEM_PROMPT = `You are Vaani-AI's SOAP-note drafter for a named Register
 10. mo_only_drug_hints: 0-5 items as plain strings like "Paracetamol 500mg BD x3d if T>38°C". Empty list is fine.
 11. follow_up_channel: one of voice|whatsapp|sms — pick the most appropriate given triage band + patient profile.
 12. If you don't have enough information for a field, use "" or [] rather than fabricating. Never invent a vital sign.
+13. patient_callback_message: the spoken message Vaani reads ALOUD to the patient on the phone callback, IN THE PATIENT'S preferred_language (Devanagari for hi, Tamil script for ta — NEVER English, NEVER digits). 2-3 short, plain spoken sentences a villager understands: what the doctor advises them to do, and what to watch for. NO drug names, NO "diagnosis"/presumptive labels, NO English medical jargon, NO ICD codes. This is the ONLY clinical content the patient hears; it is spoken BETWEEN "the doctor has seen your report" and "rest well, we are with you", so do NOT repeat those framings. If you are unsure, keep it to a simple reassurance to follow the doctor's callback. This is the patient-language twin of the English Plan — same advice, spoken warmly in their tongue.
 </rules>
 
 <icd10_catalogue>
@@ -52,6 +53,22 @@ This prompt is intentionally over the 1024-token Anthropic cache minimum so ephe
 
 Use the emit_soap tool to return your output.`;
 
+// A patient row starts anonymous (full_name is a system placeholder). Only a
+// placeholder may be overwritten by the name the caller actually stated — never
+// a real, pre-existing name.
+const NAME_PLACEHOLDER_RE = /anonymous web caller|web demo caller|pilot caller|unknown caller|web caller|^\s*$/i;
+function isPlaceholderName(s?: string | null): boolean {
+  return !s || NAME_PLACEHOLDER_RE.test(s.trim());
+}
+function isRealStatedName(s: unknown): s is string {
+  if (typeof s !== 'string') return false;
+  const t = s.trim();
+  if (t.length < 2 || t.length > 40) return false;
+  // reject non-names the model might emit when no name was given
+  if (/^(unknown|अज्ञात|n\/?a|none|patient|caller|मरीज़|कॉलर)$/i.test(t)) return false;
+  return true;
+}
+
 const SOAP_TOOL = {
   name: 'emit_soap',
   description: 'Emit an eSanjeevani-format SOAP note for the named call.',
@@ -62,6 +79,7 @@ const SOAP_TOOL = {
       objective: { type: 'string', description: 'Observed facts (vitals if available, exam findings reported by ASHA, screening results)' },
       assessment: { type: 'string', description: 'Clinical assessment with protocol citations' },
       plan: { type: 'string', description: 'Patient-facing plan (NO drug names). Ends with callback promise.' },
+      patient_callback_message: { type: 'string', description: "Spoken callback for the patient in THEIR language (hi=Devanagari, ta=Tamil — NEVER English, NEVER digits). 2-3 plain warm sentences: the doctor's advice + what to watch for. NO drug names, NO 'diagnosis', no English jargon, no ICD codes. The patient-language twin of Plan." },
       presumptive_screening_label: { type: 'string' },
       differential_list: {
         type: 'array',
@@ -88,6 +106,7 @@ const SOAP_TOOL = {
       // Demographics extracted FROM THE TRANSCRIPT (the patient stated them
       // during the demographic gate). Used to backfill the anonymous patient
       // row. Emit Unknown / omit if the patient never stated it — never guess.
+      patient_name: { type: 'string', description: 'The name the patient stated when asked (Stage 2 of the call). Omit entirely if never stated — never guess, never use a placeholder like "caller".' },
       patient_age_years: { type: 'integer', minimum: 0, maximum: 120, description: 'Age the patient stated, else omit' },
       patient_sex: { type: 'string', enum: ['M', 'F', 'Other', 'Unknown'], description: 'Sex the patient stated/implied, else Unknown' },
       patient_pregnancy_status: { type: 'string', enum: ['not_pregnant', 'pregnant', 'postpartum', 'unknown'], description: 'Only if discussed, else unknown' },
@@ -282,6 +301,9 @@ Deno.serve(async (req) => {
       original_text: JSON.stringify(soap),
       follow_up_channel: soap.follow_up_channel ?? null,
       investigations_advised: Array.isArray(soap.investigations_advised) ? soap.investigations_advised : [],
+      patient_callback_message: typeof soap.patient_callback_message === 'string' && soap.patient_callback_message.trim()
+        ? soap.patient_callback_message.trim()
+        : null,
     })
     .select('id')
     .single();
@@ -306,6 +328,12 @@ Deno.serve(async (req) => {
     const exPreg = soap.patient_pregnancy_status;
     if (patient?.pregnancy_status == null && typeof exPreg === 'string' && ['not_pregnant', 'pregnant', 'postpartum'].includes(exPreg)) {
       demoUpdate.pregnancy_status = exPreg;
+    }
+    // Name: overwrite ONLY a system placeholder ("Anonymous web caller · …")
+    // with the name the caller actually stated — so the cockpit shows who
+    // called instead of "Anonymous web caller". Never clobber a real name.
+    if (isRealStatedName(soap.patient_name) && isPlaceholderName(patient?.full_name)) {
+      demoUpdate.full_name = soap.patient_name.trim();
     }
     if (Object.keys(demoUpdate).length > 0) {
       await sb.from('patients').update(demoUpdate).eq('id', call.patient_id)
