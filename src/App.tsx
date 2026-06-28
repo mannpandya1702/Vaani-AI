@@ -4,6 +4,7 @@ import { Toaster } from 'sonner';
 import Landing from '@/pages/Landing';
 import Auth from '@/pages/Auth';
 import Cockpit from '@/pages/Cockpit';
+import ClinicDashboard from '@/pages/ClinicDashboard';
 import AshaApp from '@/pages/AshaApp';
 import NotFound from '@/pages/NotFound';
 import { RequireAuth } from '@/components/RequireAuth';
@@ -34,6 +35,14 @@ export default function App() {
               element={
                 <RequireAuth role={['rmp', 'admin']}>
                   <Cockpit />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/clinic/*"
+              element={
+                <RequireAuth role={['rmp', 'admin']}>
+                  <ClinicDashboard />
                 </RequireAuth>
               }
             />
