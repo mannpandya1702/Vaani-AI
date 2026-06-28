@@ -486,7 +486,28 @@ async def entrypoint(ctx: JobContext) -> None:
         llm=_build_llm(),
         tts=_build_tts(),
         vad=vad,
-        turn_detection=turn_detection,
+        # ── Latency tuning (livekit-agents 1.6 turn_handling API) ───────────
+        # The "slow response" the caller hears is the gap between them finishing
+        # and Vaani starting to speak. Two levers close it:
+        #   • preemptive_tts — run the LLM *and* the Sarvam Bulbul TTS round-trip
+        #     DURING end-of-turn confirmation instead of after it. Single biggest
+        #     win: the heavy STT→proxy→Claude→TTS chain now overlaps the
+        #     endpointing wait. LLM-preempt is already the 1.6 default; TTS-
+        #     preempt is NOT, so the Bulbul round-trip used to start cold after
+        #     the turn closed. Speech is only played once the turn is confirmed,
+        #     so the caller never hears a reply to a half-finished sentence, and
+        #     on a red-flag tool-call there is simply no preemptive audio to play.
+        #   • endpointing.min_delay 0.5 → 0.3 — answer ~0.2s sooner once the
+        #     caller is clearly done. The multilingual semantic detector still
+        #     extends the wait on a mid-thought pause, so slow rural speakers are
+        #     not cut off.
+        # turn_detection moves INTO turn_handling (the bare kwarg is deprecated
+        # in 1.6, removed in 2.0).
+        turn_handling={
+            "turn_detection": turn_detection,
+            "endpointing": {"min_delay": 0.3, "max_delay": 3.0},
+            "preemptive_generation": {"enabled": True, "preemptive_tts": True},
+        },
     )
 
     # On call end — whether the agent hangs up or the caller drops — persist the
