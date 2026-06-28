@@ -145,3 +145,6 @@ verify_jwt = false
 
 [functions.livekit-ingest]
 verify_jwt = false
+
+[functions.follow-up-scanner]
+verify_jwt = false

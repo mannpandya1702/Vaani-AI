@@ -343,6 +343,38 @@ Deno.serve(async (req) => {
     return jsonErr(500, 'dispatch_insert_failed', insertErr.message);
   }
 
+  // ── Step 6: Schedule the post-visit FOLLOW-UP (Stage 5) ─────────────
+  // The callback above CLOSES the consult. The follow-up is the scheduled
+  // check-in DAYS later ("better / same / worse?") that re-escalates if the
+  // patient is worsening. Best-effort — a scheduling hiccup never fails sign-off.
+  try {
+    const { data: existingFu } = await sb.from('follow_ups').select('id').eq('soap_id', soap.id).maybeSingle();
+    if (!existingFu) {
+      const { data: tri } = await sb.from('triage_decisions')
+        .select('band, presumptive_label').eq('call_id', soap.call_id).maybeSingle();
+      const band = ((tri as any)?.band as string) ?? 'AMBER';
+      const DAYS: Record<string, number> = { RED: 1, AMBER: 2, GREEN: 3 };
+      const dueMs = (DAYS[band] ?? 2) * 24 * 60 * 60 * 1000;
+      const watchFor = safetyNet && safetyNet.trim()
+        ? safetyNet.trim().slice(0, 240)
+        : ((tri as any)?.presumptive_label ? String((tri as any).presumptive_label).replace(/_/g, ' ') : null);
+      await sb.from('follow_ups').insert({
+        tenant_id: soap.tenant_id,
+        patient_id: soap.patient_id,
+        call_id: soap.call_id,
+        soap_id: soap.id,
+        watch_for: watchFor,
+        band,
+        lang,
+        scheduled_for: new Date(Date.now() + dueMs).toISOString(),
+        status: 'scheduled',
+        channel: 'voice',
+      });
+    }
+  } catch (e) {
+    console.error('[vaani-signoff] follow-up scheduling failed', String(e).slice(0, 200));
+  }
+
   return new Response(JSON.stringify({
     dispatch_id: inserted.id,
     soap_id: soap.id,

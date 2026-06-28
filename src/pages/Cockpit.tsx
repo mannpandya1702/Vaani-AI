@@ -30,6 +30,7 @@ import {
   AlertTriangle,
   Baby,
   Clock,
+  Bell,
   X,
 } from 'lucide-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -150,6 +151,7 @@ export default function Cockpit() {
         <Routes>
           <Route index element={<TriageQueue />} />
           <Route path="patients" element={<Patients />} />
+          <Route path="followups" element={<FollowUps />} />
           <Route path="notes" element={<NotesIndex />} />
           <Route path="me" element={<Me />} />
         </Routes>
@@ -182,13 +184,14 @@ function BottomNav() {
   const tabs: { to: string; icon: typeof LayoutGrid; label: string; end?: boolean }[] = [
     { to: '/cockpit', icon: LayoutGrid, label: 'Queue', end: true },
     { to: '/cockpit/patients', icon: Users, label: 'Patients' },
+    { to: '/cockpit/followups', icon: Bell, label: 'Follow-ups' },
     { to: '/cockpit/notes', icon: FileText, label: 'Notes' },
     { to: '/cockpit/me', icon: UserIcon, label: 'You' },
   ];
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 border-t bg-background/95 backdrop-blur z-50 safe-area-inset-bottom">
-      <div className="container max-w-5xl grid grid-cols-4">
+      <div className="container max-w-5xl grid grid-cols-5">
         {tabs.map(({ to, icon: Icon, label, end }) => (
           <NavLink
             key={to}
@@ -1555,6 +1558,187 @@ function Stat({ label, value }: { label: string; value: number }) {
     <div className="vaani-elevated p-4">
       <div className="text-2xl font-bold tabular-nums">{value}</div>
       <div className="text-xs text-muted-foreground mt-0.5">{label}</div>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────── */
+/* Follow-ups — the scheduled post-visit check-in loop (Stage 5) */
+
+interface FollowUpRow {
+  id: string;
+  band: string | null;
+  lang: string | null;
+  watch_for: string | null;
+  scheduled_for: string;
+  status: 'scheduled' | 'sent' | 'responded' | 'escalated' | 'cancelled';
+  message: string | null;
+  outcome: 'improving' | 'unchanged' | 'worsening' | null;
+  patient: { full_name: string | null; phone_e164: string | null } | null;
+}
+
+function FollowUps() {
+  const qc = useQueryClient();
+  const { data, isLoading } = useQuery<{ rows: FollowUpRow[] }>({
+    queryKey: ['follow-ups-feed'],
+    queryFn: async () => {
+      const r = await fetch(`${FN_BASE}/follow-ups-feed?limit=50`, { headers: { Authorization: FN_AUTH } });
+      if (!r.ok) throw new Error(`follow-ups-feed ${r.status}`);
+      return r.json();
+    },
+    refetchInterval: 5000,
+  });
+  const rows = data?.rows ?? [];
+  const [busy, setBusy] = useState<string | null>(null);
+  const [spoken, setSpoken] = useState<Record<string, string>>({});
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  async function runCheckIn(f: FollowUpRow) {
+    setBusy(f.id);
+    try {
+      const r = await fetch(`${FN_BASE}/follow-up-scanner`, {
+        method: 'POST',
+        headers: { Authorization: FN_AUTH, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ follow_up_id: f.id }),
+      });
+      const b = await r.json();
+      if (!r.ok) throw new Error(b?.error ?? `HTTP ${r.status}`);
+      const p = b.processed?.[0];
+      if (p?.message) setSpoken((s) => ({ ...s, [f.id]: p.message }));
+      if (p?.audio_b64 && audioRef.current) {
+        const bin = atob(p.audio_b64);
+        const buf = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+        const url = URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
+        const prev = audioRef.current.dataset.blobUrl;
+        if (prev) try { URL.revokeObjectURL(prev); } catch { /* noop */ }
+        audioRef.current.src = url;
+        audioRef.current.dataset.blobUrl = url;
+        await audioRef.current.play().catch(() => { /* autoplay */ });
+      }
+      toast.success('Check-in placed — Vaani called the patient in their language.');
+      qc.invalidateQueries({ queryKey: ['follow-ups-feed'] });
+    } catch (e: any) {
+      toast.error(e?.message ?? 'Could not run the check-in');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function respond(f: FollowUpRow, outcome: 'improving' | 'unchanged' | 'worsening') {
+    setBusy(f.id);
+    try {
+      const r = await fetch(`${FN_BASE}/follow-up-respond`, {
+        method: 'POST',
+        headers: { Authorization: FN_AUTH, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ follow_up_id: f.id, outcome }),
+      });
+      const b = await r.json();
+      if (!r.ok) throw new Error(b?.error ?? `HTTP ${r.status}`);
+      if (outcome === 'worsening') {
+        toast.warning('Patient worsening — re-escalated to the doctor.', { description: 'A fresh card is now in the Triage Queue.' });
+        qc.invalidateQueries({ queryKey: ['cockpit-feed'] });
+      } else {
+        toast.success(`Recorded: ${outcome}.`);
+      }
+      qc.invalidateQueries({ queryKey: ['follow-ups-feed'] });
+    } catch (e: any) {
+      toast.error(e?.message ?? 'Could not record the outcome');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div className="container max-w-5xl p-4 space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-2xl font-semibold tracking-tight">Follow-ups</h2>
+        <span className="text-xs text-muted-foreground">scheduled check-ins · worsening re-escalates</span>
+      </div>
+      <p className="text-sm text-muted-foreground max-w-2xl">
+        After you sign a note, Vaani calls the patient back in a few days — “are you better, the same, or worse?” —
+        in their language. If anyone is worsening, a fresh card re-opens in the queue automatically.
+      </p>
+
+      {isLoading && <SkeletonStack />}
+      {!isLoading && rows.length === 0 && (
+        <div className="rounded-2xl border border-dashed bg-muted/30 p-12 text-center text-muted-foreground">
+          <Bell className="w-8 h-8 mx-auto mb-2 opacity-30" />
+          No follow-ups scheduled yet.
+          <div className="mt-1 text-sm">Sign a note in the queue — a check-in schedules automatically.</div>
+        </div>
+      )}
+
+      <div className="grid gap-3 md:grid-cols-2">
+        {rows.map((f) => {
+          const cls = bandClasses(((f.band as TriageBand) || 'AMBER'));
+          const done = f.status === 'responded' || f.status === 'escalated';
+          return (
+            <div key={f.id} className={cn('vaani-elevated p-4 space-y-2.5', f.band && cls.cardBorder)}>
+              <div className="flex items-center gap-2">
+                <span className={cn('w-2 h-2 rounded-full shrink-0', cls.dot)} />
+                <span className="font-semibold truncate">{f.patient?.full_name?.trim() || 'Unknown patient'}</span>
+                <span className={cn(
+                  'ml-auto text-[10px] font-semibold uppercase tracking-wider rounded-full px-2 py-0.5',
+                  f.status === 'scheduled' && 'bg-muted text-muted-foreground',
+                  f.status === 'sent' && 'bg-accent/10 text-accent',
+                  f.status === 'responded' && 'bg-success/10 text-success',
+                  f.status === 'escalated' && 'bg-destructive/10 text-destructive',
+                )}>
+                  {f.outcome || f.status}
+                </span>
+              </div>
+
+              {f.watch_for && (
+                <div className="text-xs text-muted-foreground">
+                  <span className="font-medium text-foreground/70">Watch for:</span> {f.watch_for}
+                </div>
+              )}
+              <div className="text-xs text-muted-foreground inline-flex items-center gap-1">
+                <Clock className="w-3 h-3" />
+                {f.status === 'scheduled'
+                  ? `check-in due ${new Date(f.scheduled_for).toLocaleDateString()}`
+                  : `${f.lang?.toUpperCase() ?? ''} · ${f.status}`}
+              </div>
+
+              {spoken[f.id] && (
+                <div className="rounded-lg bg-primary/5 border border-primary/15 p-2.5 text-xs leading-relaxed font-hind" lang={f.lang ?? 'hi'}>
+                  {spoken[f.id]}
+                </div>
+              )}
+
+              {!done ? (
+                <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t">
+                  <button
+                    onClick={() => runCheckIn(f)}
+                    disabled={busy === f.id}
+                    className="inline-flex items-center gap-1 rounded-md bg-primary text-primary-foreground px-2.5 py-1 text-xs font-medium hover:brightness-105 disabled:opacity-50"
+                  >
+                    <Phone className="w-3.5 h-3.5" /> {busy === f.id ? '…' : 'Run check-in'}
+                  </button>
+                  <span className="mx-0.5 text-[10px] text-muted-foreground">patient says:</span>
+                  <button onClick={() => respond(f, 'improving')} disabled={busy === f.id} className="inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs text-success hover:bg-success/5 disabled:opacity-50">
+                    <Check className="w-3.5 h-3.5" /> Better
+                  </button>
+                  <button onClick={() => respond(f, 'unchanged')} disabled={busy === f.id} className="rounded-md border px-2 py-1 text-xs hover:bg-muted disabled:opacity-50">
+                    Same
+                  </button>
+                  <button onClick={() => respond(f, 'worsening')} disabled={busy === f.id} className="inline-flex items-center gap-1 rounded-md border border-destructive/40 text-destructive px-2 py-1 text-xs hover:bg-destructive/5 disabled:opacity-50">
+                    <AlertCircle className="w-3.5 h-3.5" /> Worse
+                  </button>
+                </div>
+              ) : (
+                <div className="pt-2 border-t text-xs">
+                  {f.outcome === 'worsening'
+                    ? <span className="text-destructive font-medium inline-flex items-center gap-1"><ArrowUpRight className="w-3.5 h-3.5" /> Re-escalated to the triage queue</span>
+                    : <span className="text-success font-medium">Outcome recorded: {f.outcome}</span>}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <audio ref={audioRef} hidden />
     </div>
   );
 }
