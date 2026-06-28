@@ -579,6 +579,16 @@ function SoapReviewDialog({
   const [soulMessage, setSoulMessage] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
+  // Call recording + transcript ("listen & read the call" panel). Lazy-loaded
+  // from call-transcript the first time the RMP expands it, so the 3s feed
+  // poll stays light.
+  const [showConvo, setShowConvo] = useState(false);
+  const [convo, setConvo] = useState<
+    { turns: { idx: number; role: 'user' | 'assistant'; text: string }[]; recording_url: string | null; duration_seconds: number | null } | null
+  >(null);
+  const [convoLoading, setConvoLoading] = useState(false);
+  const [convoErr, setConvoErr] = useState<string | null>(null);
+
   // AI Shadow Diagnosis — doctor decision capture (ignore / accept / edit).
   const [reviewing, setReviewing] = useState(false);
   const [localDecision, setLocalDecision] = useState<
@@ -597,6 +607,9 @@ function SoapReviewDialog({
     setSoulMessage(null);
     setLocalDecision(null);
     setEditMode(false);
+    setShowConvo(false);
+    setConvo(null);
+    setConvoErr(null);
     if (audioRef.current?.dataset.blobUrl) {
       try { URL.revokeObjectURL(audioRef.current.dataset.blobUrl); } catch {/* noop */}
       audioRef.current.dataset.blobUrl = '';
@@ -685,6 +698,30 @@ function SoapReviewDialog({
     }
   }
 
+  async function loadTranscript() {
+    if (!row?.call?.id) { setConvoErr('No call is linked to this card yet.'); return; }
+    setConvoLoading(true);
+    setConvoErr(null);
+    try {
+      const r = await fetch(`${FN_BASE}/call-transcript?call_id=${encodeURIComponent(row.call.id)}`, {
+        headers: { Authorization: FN_AUTH },
+      });
+      const body = await r.json();
+      if (!r.ok) throw new Error(body?.error ?? `HTTP ${r.status}`);
+      setConvo(body);
+    } catch (e: any) {
+      setConvoErr(e?.message ?? 'Could not load the transcript');
+    } finally {
+      setConvoLoading(false);
+    }
+  }
+
+  function toggleConvo() {
+    const next = !showConvo;
+    setShowConvo(next);
+    if (next && !convo && !convoLoading) loadTranscript();
+  }
+
   return (
     <Dialog.Root open={open} onOpenChange={(v) => !v && onClose()}>
       <Dialog.Portal>
@@ -705,6 +742,63 @@ function SoapReviewDialog({
           </div>
 
           <div className="p-5 space-y-4">
+            {/* Call recording & transcript — the RMP can listen to and read the
+                actual conversation before signing. Lazy-loaded on expand. */}
+            <div className="rounded-lg border bg-muted/30">
+              <button
+                onClick={toggleConvo}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium hover:bg-secondary/40 rounded-lg"
+              >
+                <Mic className="w-4 h-4 text-teal-600" />
+                <span>Call recording &amp; transcript</span>
+                {convo?.duration_seconds ? (
+                  <span className="text-xs text-muted-foreground">· {Math.round(convo.duration_seconds)}s</span>
+                ) : null}
+                <span className="ml-auto text-xs text-muted-foreground">{showConvo ? '▾' : '▸'}</span>
+              </button>
+
+              {showConvo && (
+                <div className="border-t px-3 py-3 space-y-3">
+                  {/* Recording player — only when a recording was actually captured */}
+                  {convo?.recording_url ? (
+                    <audio controls preload="none" src={convo.recording_url} className="w-full h-9" />
+                  ) : (
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground rounded-md bg-muted/50 px-2.5 py-2">
+                      <Mic className="w-3.5 h-3.5 shrink-0" />
+                      Audio recording not captured for this call — the transcript is below.
+                    </div>
+                  )}
+
+                  {convoLoading && <div className="text-xs text-muted-foreground">Loading transcript…</div>}
+                  {convoErr && <div className="text-xs text-red-600">{convoErr}</div>}
+                  {convo && !convoLoading && convo.turns.length === 0 && (
+                    <div className="text-xs text-muted-foreground">No transcript turns recorded for this call.</div>
+                  )}
+                  {convo && convo.turns.length > 0 && (
+                    <div className="max-h-72 overflow-y-auto space-y-2 pr-1">
+                      {convo.turns.map((t) => (
+                        <div key={t.idx} className={cn('flex', t.role === 'assistant' ? 'justify-start' : 'justify-end')}>
+                          <div
+                            className={cn(
+                              'max-w-[85%] rounded-2xl px-3 py-1.5 text-sm',
+                              t.role === 'assistant'
+                                ? 'bg-teal-600/10 rounded-tl-sm'
+                                : 'bg-secondary rounded-tr-sm',
+                            )}
+                          >
+                            <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-0.5">
+                              {t.role === 'assistant' ? 'वाणी · Vaani' : 'मरीज़ · Patient'}
+                            </div>
+                            {t.text}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
             {!row.soap && (
               <div className="rounded-lg border border-dashed bg-muted/40 p-4 text-sm text-muted-foreground">
                 SOAP draft pending… The call ended very recently — refreshing in a few seconds.
