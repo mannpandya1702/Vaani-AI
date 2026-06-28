@@ -64,6 +64,15 @@ const SOUL_FALLBACK: Record<string, string> = {
   en: 'Hello. The doctor has reviewed your report. Rest well — we are with you.',
 };
 
+// Patient-language reassurance body used when soap-generate did NOT provide a
+// patient_callback_message (the model occasionally omits it despite the field
+// being required). A hi/ta patient must NEVER hear the English plan read aloud —
+// this guarantees a safe, in-language body. Spoken BETWEEN opener and closer.
+const CALLBACK_FALLBACK_BODY: Record<string, string> = {
+  hi: 'अभी ज़्यादा घबराने की बात नहीं है। डॉक्टर साहब की सलाह के अनुसार चलिए और आराम कीजिए। अगर तकलीफ़ बढ़े — तेज़ बुख़ार, साँस लेने में दिक्कत, या बहुत कमज़ोरी — तो देर किए बिना नज़दीकी अस्पताल जाइए।',
+  ta: 'இப்போது அதிகம் கவலைப்பட வேண்டாம். டாக்டரின் ஆலோசனைப்படி நடந்து ஓய்வு எடுங்கள். அறிகுறிகள் அதிகரித்தால் — அதிக காய்ச்சல், மூச்சுத் திணறல், அல்லது மிகுந்த சோர்வு — தாமதிக்காமல் அருகிலுள்ள மருத்துவமனைக்குச் செல்லுங்கள்.',
+};
+
 /**
  * Trim Plan to a callback-friendly chunk (≤200 chars, full sentence).
  * Audit §4: previously this could split mid-word and trailing ellipsis
@@ -224,9 +233,13 @@ Deno.serve(async (req) => {
   if (patientBody && patientBody.trim().length >= 8) {
     message = [L(SOUL_OPENER), patientBody.trim(), L(SOUL_CLOSER)]
       .join(' ').replace(/\s+/g, ' ').trim();
+  } else if (lang !== 'en') {
+    // hi/ta patient with no model-provided body: NEVER read the English plan
+    // aloud. Use the safe patient-language reassurance.
+    message = [L(SOUL_OPENER), CALLBACK_FALLBACK_BODY[lang] ?? CALLBACK_FALLBACK_BODY.hi, L(SOUL_CLOSER)]
+      .join(' ').replace(/\s+/g, ' ').trim();
   } else {
-    // Fallback for older notes with no patient-language body: assemble from the
-    // (English) Plan fields as before. Better than silence.
+    // English patient: assemble from the (English) Plan fields as before.
     const planSnippet = trimPlan(planText, 360);
     const parts: string[] = [L(SOUL_OPENER)];
     const recap = trimPlan(subjective, 150);

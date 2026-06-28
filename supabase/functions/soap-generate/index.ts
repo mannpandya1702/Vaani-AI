@@ -115,6 +115,9 @@ const SOAP_TOOL = {
     required: [
       'subjective', 'objective', 'assessment', 'plan',
       'presumptive_screening_label', 'patient_callback_eta_min',
+      // REQUIRED so the soul callback is ALWAYS in the patient's language —
+      // when omitted, vaani-signoff fell back to the English plan body.
+      'patient_callback_message',
     ],
   },
 };
