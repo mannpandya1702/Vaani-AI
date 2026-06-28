@@ -119,7 +119,7 @@
 
   <!-- 3 -->
   <h2><span class="n">03</span> Data processing, model &amp; system design</h2>
-  <p><b>Agent-first, prompt-engineered (RAG deferred — by design).</b> Frontier clinical reasoning needs an <b>agent loop with deterministic safety rails</b>, not document retrieval: the safety-critical work is rule-based red-flag detection and statutory refusals that must <i>never</i> be left to a model. We run Claude Sonnet 4.6 behind board-reviewed prompts. <b>RAG (pgvector + multilingual-e5)</b> is the planned layer for grounding to clinical-pathway catalogues as they grow — a retrieval problem, added when the catalogue justifies it. Fine-tuning is the roadmap once the consented corpus is large enough.</p>
+  <p><b>Agent-first with deterministic safety rails — and we made the RAG-vs-agent call with data, not assertion.</b> The safety-critical work (rule-based red-flag detection, statutory refusals) must <i>never</i> be left to a model, so it stays a deterministic agent loop, not retrieval. But we <b>built a hybrid RAG layer</b> — in-region <code>gte-small</code> dense + lexical full-text, reciprocal-rank fused — over a curated corpus of Indian national protocols (WHO IMCI, ICMR STW, India PEN, MoHFW) and <b>A/B-tested it against our own eval</b>: inside the triage band decision it <i>regressed</i> accuracy (100%→95.8%) with no gain, so we keep retrieval <b>out of the safety-critical path</b> and use it where it is purely additive — <b>grounding the doctor's SOAP note and the AI shadow differential with cited guidelines</b> (e.g. <code>[ICMR_STW:rural_febrile_workup]</code>). The embeddings never leave India. That is a <i>measured</i> tradeoff, not a deferral. Fine-tuning is the roadmap once the consented corpus is large enough.</p>
   <div class="flow">
     <div class="node"><b>Patient</b><span>web / toll-free, vernacular</span></div><div class="arr">→</div>
     <div class="node"><b>VAPI</b><span>media · turn-taking</span></div><div class="arr">→</div>
@@ -147,10 +147,10 @@
     <div>
       <h3>Stack &amp; scale</h3>
       <ul>
-        <li>VAPI (web + Exotel PSTN) · Indic STT/TTS (Deepgram/ElevenLabs live; Sarvam ap-south-1 path) · Claude Sonnet 4.6 via a custom-LLM proxy.</li>
+        <li>VAPI (web + Exotel PSTN) for the live demo; <b>LiveKit Agents now deployed in ap-south (India)</b> — Sarvam Saarika STT + Bulbul TTS — as the India-resident voice stack. Claude Sonnet 4.6 via a custom-LLM safety proxy.</li>
         <li>Proxy = <b>PII redaction + cross-border audit + statutory refusals + prompt-caching</b> (≈57% LLM-cost cut).</li>
         <li>Supabase Postgres ap-south-1 + edge functions · multi-tenant RLS · 7-yr retention.</li>
-        <li>Scale path: prompt-caching today → Bedrock ap-south-1 (residency + latency) → self-hosted LiveKit-in-Mumbai to drop the platform fee.</li>
+        <li>Residency: <b>LiveKit voice stack live in ap-south today</b> — agent + Sarvam STT/TTS + Postgres all in-India; only the PII-redacted LLM crosses the border → Bedrock ap-south-1 closes that last hop.</li>
       </ul>
     </div>
   </div>
