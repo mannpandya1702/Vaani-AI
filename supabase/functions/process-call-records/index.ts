@@ -57,6 +57,51 @@ Deno.serve(async (req) => {
   const t0 = Date.now();
   const trace: Record<string, unknown> = { call_id: callId };
 
+  // ── Step 0: GUARANTEE a patient before triage ────────────────
+  // 18/24 live calls had patient_id NULL: the call-start patient insert fails
+  // intermittently (short/abandoned calls killed mid-insert), but
+  // triage_decisions.patient_id is NOT NULL, so triage hard-stopped (502) and
+  // NO cockpit card was ever produced. Backfill an anonymous patient here so
+  // triage → SOAP → shadow all have a valid patient_id regardless of why the
+  // call-start insert missed. Runs after the call has ended, so no race with
+  // handleCallStarted.
+  {
+    const { data: c } = await sb.from('calls')
+      .select('id, patient_id, tenant_id, vapi_call_id, lang_declared')
+      .eq('id', callId).maybeSingle();
+    if (c && !c.patient_id) {
+      let tenantId = (c.tenant_id as string | null) ?? null;
+      if (!tenantId) {
+        const orgId = Deno.env.get('VAPI_ORG_ID');
+        const byOrg = orgId
+          ? (await sb.from('tenants').select('id').eq('vapi_org_id', orgId).maybeSingle()).data
+          : null;
+        tenantId = byOrg?.id
+          ?? (await sb.from('tenants').select('id').order('created_at').limit(1).maybeSingle()).data?.id
+          ?? null;
+      }
+      if (tenantId) {
+        const rnd = Math.floor(Math.random() * 1e8).toString().padStart(8, '0');
+        const lang = (c.lang_declared as string | null) ?? 'hi';
+        const { data: created, error: pErr } = await sb.from('patients').insert({
+          phone_e164: `+91900${rnd}`,
+          tenant_id: tenantId,
+          preferred_language: lang as any,
+          pregnancy_status: 'not_pregnant',
+          full_name: `Anonymous web caller · ${String(c.vapi_call_id ?? callId).slice(0, 8)}`,
+        }).select('id').single();
+        if (created?.id) {
+          await sb.from('calls').update({ patient_id: created.id, tenant_id: tenantId }).eq('id', callId);
+          trace.patient_backfilled = created.id;
+        } else {
+          trace.patient_backfill_failed = String((pErr as any)?.message ?? 'unknown');
+        }
+      } else {
+        trace.patient_backfill_no_tenant = true;
+      }
+    }
+  }
+
   // ── Step 1: triage-score ─────────────────────────────────────
   const triageStart = Date.now();
   const triage = await invokeEdge('triage-score', callId);
