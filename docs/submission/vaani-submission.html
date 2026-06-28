@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vaani-AI — India AI Hackathon Submission</title>
+<style>
+  :root{
+    --ink:#0f1b2d; --muted:#5b6b80; --line:#e4e9f0; --bg:#ffffff;
+    --teal:#0f766e; --indigo:#3949ab; --coral:#e35d4f; --soft:#f6f8fb;
+    --good:#0f766e;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:#eef1f5;color:var(--ink);
+    font-family:'Inter',ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+    font-size:13px;line-height:1.5;-webkit-font-smoothing:antialiased}
+  .page{max-width:820px;margin:18px auto;background:var(--bg);padding:40px 44px;
+    box-shadow:0 1px 24px rgba(15,27,45,.08);border-radius:10px}
+  h1,h2,h3{margin:0;line-height:1.18;color:var(--ink)}
+  h2{font-size:15px;letter-spacing:.02em;text-transform:uppercase;color:var(--indigo);
+    margin:26px 0 10px;padding-bottom:6px;border-bottom:2px solid var(--line);display:flex;gap:10px;align-items:baseline}
+  h2 .n{font-size:12px;color:#fff;background:var(--indigo);border-radius:5px;padding:2px 7px;font-weight:700}
+  h3{font-size:13px;color:var(--teal);margin:14px 0 4px;text-transform:uppercase;letter-spacing:.03em}
+  p{margin:6px 0}
+  .muted{color:var(--muted)}
+  .lead{font-size:14px;color:#27384e}
+  /* cover */
+  .cover{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;
+    padding-bottom:18px;border-bottom:3px solid var(--ink)}
+  .brand .name{font-size:34px;font-weight:800;letter-spacing:-.5px}
+  .brand .name .dev{font-weight:800}
+  .brand .tag{font-size:14px;color:var(--teal);font-weight:600;margin-top:2px}
+  .brand .sub{font-size:12px;color:var(--muted);margin-top:6px;max-width:420px}
+  .statbox{text-align:right;flex:none}
+  .statbox .big{font-size:30px;font-weight:800;color:var(--coral);line-height:1}
+  .statbox .cap{font-size:10.5px;color:var(--muted);max-width:200px;margin-top:4px}
+  /* metric cards */
+  .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:14px 0 4px}
+  .card{background:var(--soft);border:1px solid var(--line);border-radius:9px;padding:11px 12px}
+  .card .v{font-size:20px;font-weight:800;color:var(--teal)}
+  .card .v.coral{color:var(--coral)}
+  .card .l{font-size:10.5px;color:var(--muted);margin-top:2px;line-height:1.35}
+  /* tables */
+  table{width:100%;border-collapse:collapse;margin:8px 0;font-size:12px}
+  th,td{text-align:left;padding:6px 9px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-size:10.5px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);background:var(--soft)}
+  td.r,th.r{text-align:right;font-variant-numeric:tabular-nums}
+  .ok{color:var(--good);font-weight:700}
+  /* arch flow */
+  .flow{display:flex;flex-wrap:wrap;align-items:stretch;gap:6px;margin:10px 0;font-size:11px}
+  .node{background:#fff;border:1.5px solid var(--line);border-radius:8px;padding:7px 9px;flex:1;min-width:84px}
+  .node b{display:block;font-size:11px;color:var(--ink)}
+  .node span{color:var(--muted);font-size:9.5px}
+  .node.k{border-color:var(--teal);background:#f0faf8}
+  .node.soul{border-color:var(--coral);background:#fdf3f1}
+  .arr{align-self:center;color:#9fb0c4;font-weight:700}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  .pill{display:inline-block;background:#eef2ff;color:var(--indigo);border-radius:20px;padding:2px 9px;font-size:10.5px;font-weight:600;margin:2px 3px 2px 0}
+  .soulbar{background:linear-gradient(90deg,#fdf3f1,#fff);border-left:3px solid var(--coral);
+    padding:10px 14px;border-radius:0 8px 8px 0;margin:10px 0}
+  ul{margin:4px 0;padding-left:18px}
+  li{margin:3px 0}
+  .foot{margin-top:22px;padding-top:12px;border-top:1px solid var(--line);font-size:11px;color:var(--muted);
+    display:flex;justify-content:space-between;gap:12px}
+  @media print{
+    body{background:#fff}
+    .page{box-shadow:none;margin:0;border-radius:0;max-width:none;padding:14mm 14mm}
+    h2{break-after:avoid} .card,.node,table,.soulbar{break-inside:avoid}
+    @page{size:A4;margin:0}
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- COVER -->
+  <div class="cover">
+    <div class="brand">
+      <div class="name">वाणी <span class="dev">Vaani-AI</span></div>
+      <div class="tag">The doctor will see you now — in your language.</div>
+      <div class="sub">An AI voice front-door that screens a rural patient in their own tongue, hands a doctor-ready history to a real physician, and calls the patient back to say the doctor has seen them.</div>
+    </div>
+    <div class="statbox">
+      <div class="big">1 : 11,000</div>
+      <div class="cap">Doctor-to-patient ratio in rural India — 11× worse than the WHO standard.</div>
+    </div>
+  </div>
+
+  <div class="cards">
+    <div class="card"><div class="v">100%</div><div class="l">Emergency sensitivity (18/18 RED caught) · live eval</div></div>
+    <div class="card"><div class="v">100%</div><div class="l">Triage band exact-match (RED/AMBER/GREEN)</div></div>
+    <div class="card"><div class="v">&lt;1.4s</div><div class="l">Target p95 live-voice latency</div></div>
+    <div class="card"><div class="v coral">₹8.77</div><div class="l">Cost / 3-min consult vs ₹400–1,500 video</div></div>
+  </div>
+
+  <!-- 1 -->
+  <h2><span class="n">01</span> Clinical stage + the depth of the problem</h2>
+  <p class="lead">The bottleneck in rural India isn't the number of doctors — it's the hours a doctor loses to screening, history-taking, and follow-up. We target the <b>front door</b>: <b>Stage 1 — Pre-Visit Capture</b>. Vaani captures a GP-grade history in the patient's vernacular, detects red flags, and routes a structured SOAP summary to a real physician — <b>before</b> the consult.</p>
+  <p>We deliberately scope to screening &amp; triage. <b>Vaani never diagnoses, prescribes, or signs anything.</b> "The AI is the listener; the doctor is the decider." Because the doctor's time is the scarce resource, we close the loop end-to-end: a single 3-minute call walks the clinical chain — chief complaint → onset → severity → complaint-specific danger signs → age/sex/pregnancy gate — and on any red flag escalates instantly to a Registered Medical Practitioner (SMC-verified, ABDM-HPR-linked) who reviews and signs.</p>
+  <div class="soulbar"><b style="color:var(--coral)">The soul moment (our patent).</b> After the doctor signs, Vaani phones the patient back in their language — <i>"डॉक्टर साहब ने देख लिया है / the doctor has seen you."</i> This closes telemedicine's biggest failure: the patient never knowing whether a doctor actually saw them.</div>
+
+  <!-- 2 -->
+  <h2><span class="n">02</span> Vernacular voice-data collection</h2>
+  <div class="two">
+    <div>
+      <p><b>The conversation is the dataset.</b> Every screening call is captured turn-by-turn — natively in Devanagari/Tamil script, with Hindi-English-Tamil <b>code-switching preserved</b> and word-level timestamps — and PII-redacted before storage.</p>
+      <p>Each call is auto-labeled <b>twice</b>: by the deterministic triage layer (band + red-flag categories) and — the gold label — by the <b>real doctor's signed SOAP note.</b> We accumulate a doctor-adjudicated, consented, India-domiciled vernacular clinical-speech corpus.</p>
+    </div>
+    <div>
+      <h3>Collection at scale</h3>
+      <ul>
+        <li>ASHA-worker-assisted intake at Primary Health Centres + missed-call / toll-free dial-in on basic phones.</li>
+        <li>Stratified to <b>over-sample rare emergencies and atypical presentations</b> (the cases that kill).</li>
+        <li>DPDP-consented per call (s.6), India-hosted (ap-south-1).</li>
+        <li>The doctor's accept/edit on every shadow opinion becomes the agreement signal for future fine-tuning.</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- 3 -->
+  <h2><span class="n">03</span> Data processing, model &amp; system design</h2>
+  <p><b>Agent-first, prompt-engineered (RAG deferred — by design).</b> Frontier clinical reasoning needs an <b>agent loop with deterministic safety rails</b>, not document retrieval: the safety-critical work is rule-based red-flag detection and statutory refusals that must <i>never</i> be left to a model. We run Claude Sonnet 4.6 behind board-reviewed prompts. <b>RAG (pgvector + multilingual-e5)</b> is the planned layer for grounding to clinical-pathway catalogues as they grow — a retrieval problem, added when the catalogue justifies it. Fine-tuning is the roadmap once the consented corpus is large enough.</p>
+  <div class="flow">
+    <div class="node"><b>Patient</b><span>web / toll-free, vernacular</span></div><div class="arr">→</div>
+    <div class="node"><b>VAPI</b><span>media · turn-taking</span></div><div class="arr">→</div>
+    <div class="node"><b>Indic STT</b><span>code-switch, &lt;₹1/min</span></div><div class="arr">→</div>
+    <div class="node k"><b>Safety proxy</b><span>refusals · PII-redact · audit · cache</span></div><div class="arr">→</div>
+    <div class="node"><b>Claude 4.6</b><span>history + reasoning</span></div>
+  </div>
+  <div class="flow">
+    <div class="node"><b>3-tier triage</b><span>rules → Indic-LLM → Claude</span></div><div class="arr">→</div>
+    <div class="node"><b>ICD-10 SOAP</b><span>grounded catalogue</span></div><div class="arr">→</div>
+    <div class="node"><b>Shadow opinion</b><span>top-3 differential</span></div><div class="arr">→</div>
+    <div class="node"><b>RMP cockpit</b><span>review · sign</span></div><div class="arr">→</div>
+    <div class="node soul"><b>Vaani callback</b><span>"the doctor saw you"</span></div>
+  </div>
+  <div class="two" style="margin-top:8px">
+    <div>
+      <h3>Guardrails (no unsafe / hallucinated output)</h3>
+      <ul>
+        <li><b>3-tier triage</b>, safety-first: deterministic rules (BE-FAST, IMCI peds danger signs, silent-MI, sepsis) can only <i>raise</i> urgency, never lower it.</li>
+        <li><b>Hardcoded statutory refusals</b> (PCPNDT / MHCA / POCSO / drug-Rx) — the LLM can never improvise around them.</li>
+        <li><b>ICD-10 grounded</b> to a curated rural catalogue — off-catalogue codes are dropped.</li>
+        <li><b>Drug names never reach the patient</b> (doctor-cockpit only); a real RMP signs every note.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Stack &amp; scale</h3>
+      <ul>
+        <li>VAPI (web + Exotel PSTN) · Indic STT/TTS (Deepgram/ElevenLabs live; Sarvam ap-south-1 path) · Claude Sonnet 4.6 via a custom-LLM proxy.</li>
+        <li>Proxy = <b>PII redaction + cross-border audit + statutory refusals + prompt-caching</b> (≈57% LLM-cost cut).</li>
+        <li>Supabase Postgres ap-south-1 + edge functions · multi-tenant RLS · 7-yr retention.</li>
+        <li>Scale path: prompt-caching today → Bedrock ap-south-1 (residency + latency) → self-hosted LiveKit-in-Mumbai to drop the platform fee.</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- 4 -->
+  <h2><span class="n">04</span> Evals</h2>
+  <p class="muted" style="margin-top:0">North-star = <b>emergency sensitivity</b> (RED recall on true emergencies). A missed emergency is catastrophic; a false alarm is one cheap doctor glance — so we drive sensitivity to 100% and accept lower precision. Harness: 24 senior-MO-adjudicated cases (18 true emergencies), run live against the deployed triage.</p>
+  <div class="two">
+    <div>
+      <table>
+        <tr><th>Metric</th><th class="r">Target</th><th class="r">Live</th></tr>
+        <tr><td><b>Emergency sensitivity</b> (18/18)</td><td class="r">100%</td><td class="r ok">100%</td></tr>
+        <tr><td>Band exact-match</td><td class="r">≥92%</td><td class="r ok">100%</td></tr>
+        <tr><td>Presumptive-label match</td><td class="r">≥70%</td><td class="r ok">90.5%</td></tr>
+        <tr><td>Recommended-action recall</td><td class="r">≥95%</td><td class="r ok">100%</td></tr>
+        <tr><td>Mean triage confidence</td><td class="r">—</td><td class="r">0.94</td></tr>
+        <tr><td>p95 live-voice latency</td><td class="r">&lt;1.4s</td><td class="r">tuned*</td></tr>
+      </table>
+      <p class="muted" style="font-size:10px">*Live-voice first-token latency (proxy + caching + endpointing). Post-call triage/SOAP is an async ~20–30s budget, off the patient's critical path.</p>
+    </div>
+    <div>
+      <h3>vs a junior GP (emergency triage)</h3>
+      <table>
+        <tr><th>Scorer</th><th class="r">Emergency sensitivity</th></tr>
+        <tr><td><b>Vaani (AI)</b></td><td class="r ok">100.0%</td></tr>
+        <tr><td>Junior GP (synthetic)</td><td class="r">83.3%</td></tr>
+      </table>
+      <p class="muted">The junior-GP misses are not random — they're the <b>atypical presentations lacking a textbook trigger</b> (atypical MI in a diabetic, afebrile sepsis, isolated peds lethargy). Vaani screens these explicitly and never gets tired, bored, or anchored on "looks viral."</p>
+      <h3>top-k</h3>
+      <p style="margin-top:2px">The shadow layer emits a <b>ranked top-3 differential</b>; we measure top-1/top-3 agreement with the signing doctor.</p>
+    </div>
+  </div>
+  <h3>Cost per consultation</h3>
+  <table>
+    <tr><th>Channel</th><th class="r">₹ / consult</th><th>Notes</th></tr>
+    <tr><td><b>Vaani — missed-call, cache-warm</b></td><td class="r ok">₹8.77</td><td>blended ₹2.92/min · vernacular STT under ₹1/min · prompt-cache cuts the live LLM ₹7.77→₹3.33</td></tr>
+    <tr><td>Offline rural consult</td><td class="r">₹150–400</td><td>travel + lost wage not counted</td></tr>
+    <tr><td>eSanjeevani video consult</td><td class="r">₹400–1,500</td><td>needs smartphone + bandwidth</td></tr>
+  </table>
+
+  <div class="foot">
+    <span>वाणी Vaani-AI · AI-assisted screening · a real RMP reviews &amp; signs every note · no AI signs a note, no AI dispenses care.</span>
+    <span>India AI Hackathon · Stage 1 (+ Stages 3–5 integrated)</span>
+  </div>
+
+</div>
+</body>
+</html>
