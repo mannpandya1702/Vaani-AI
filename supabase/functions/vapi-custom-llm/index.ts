@@ -49,6 +49,11 @@ import { auditCrossBorderTransfer } from '../_shared/cross-border-audit.ts';
 
 const ANTHROPIC_KEY = Deno.env.get('ANTHROPIC_API_KEY') ?? '';
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
+// Live-voice model. The conversation is short screening Q&A — Haiku's much lower
+// time-to-first-token cuts per-turn latency hard. The heavy clinical reasoning
+// (triage/SOAP/shadow) runs post-call on Sonnet via the direct anthropic-client,
+// NOT through this proxy, so it is unaffected. Override via env to roll back.
+const VOICE_LLM_MODEL = Deno.env.get('VOICE_LLM_MODEL') ?? 'claude-haiku-4-5-20251001';
 
 interface OpenAIToolCall {
   id: string;
@@ -225,7 +230,7 @@ Deno.serve(async (req) => {
   auditCrossBorderTransfer({
     callId: dbCallId ?? undefined,
     provider: 'anthropic',
-    model: 'claude-sonnet-4-6',
+    model: VOICE_LLM_MODEL,
     region: 'us-east-1',
     regionAttestedBy: 'anthropic_api_default',
     payloadPiiRedacted: true,
@@ -237,8 +242,8 @@ Deno.serve(async (req) => {
   // ── STEP 4: Call Claude with cache_control on system + tools ──
   const anthropicTools = toAnthropicTools(body.tools);
   const anthropicBody: Record<string, unknown> = {
-    model: 'claude-sonnet-4-6',
-    max_tokens: body.max_tokens ?? 512,
+    model: VOICE_LLM_MODEL,
+    max_tokens: body.max_tokens ?? 384,
     temperature: body.temperature ?? 0.2,
     stream: wantsStream,
     system: [
