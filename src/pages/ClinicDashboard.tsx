@@ -20,7 +20,8 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowLeft, Stethoscope, Radio, PhoneOutgoing, Play, MessageSquare,
-  FileText, Volume2, X, CheckCircle2, Clock, Send,
+  FileText, Volume2, X, CheckCircle2, Clock, Send, Sparkles,
+  Users, ClipboardCheck, BarChart3,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
@@ -41,50 +42,86 @@ export default function ClinicDashboard() {
   const { data } = useCockpitFeed();
   const liveRows = data?.rows ?? [];
 
-  const TABS: { key: ClinicTab; label: string }[] = [
-    { key: 'ops', label: 'Clinic Operations' },
-    { key: 'population', label: 'Population Health' },
+  const TABS: { key: ClinicTab; label: string; icon: typeof Users; hint: string }[] = [
+    { key: 'ops', label: 'Clinic Operations', icon: ClipboardCheck, hint: 'In-visit notes & callbacks' },
+    { key: 'population', label: 'Population Health', icon: BarChart3, hint: 'Village trends & risk map' },
   ];
+
+  const signedToday = liveRows.filter((r) => r.soap?.mo_signed_at).length;
+  const redToday = liveRows.filter((r) => r.triage?.band === 'RED').length;
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      <header className="border-b px-4 py-3 flex items-center gap-2 sticky top-0 bg-background/90 backdrop-blur z-40">
-        <span className="vaani-bindi" />
-        <span className="font-semibold">vaani · clinic</span>
-        <NavLink to="/cockpit" className="ml-3 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+      {/* Top bar */}
+      <header className="border-b border-border/70 px-4 py-3 flex items-center gap-3 sticky top-0 bg-background/85 backdrop-blur-md z-40">
+        <span className="vaani-bindi-pulse" aria-hidden />
+        <span className="font-bold tracking-tight">vaani</span>
+        <span className="text-sm font-medium text-muted-foreground hidden sm:inline">· clinic</span>
+        <NavLink
+          to="/cockpit"
+          className="ml-2 inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition"
+        >
           <ArrowLeft className="w-3.5 h-3.5" /> Doctor Cockpit
         </NavLink>
         <DemoDisclosureChip />
       </header>
 
-      <main className="flex-1 overflow-y-auto pb-12">
-        <div className="container max-w-screen-lg p-4 space-y-5">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Clinic Dashboard</h1>
-            <p className="text-sm text-muted-foreground">
-              Clinic-wide capabilities — shown for the demo. The doctor's review &amp; approval stays in the
-              {' '}<NavLink to="/cockpit" className="underline">Cockpit</NavLink>.
+      <main className="flex-1 overflow-y-auto pb-16">
+        {/* Hero */}
+        <section className="vaani-mesh text-vaani-paper">
+          <div className="container max-w-6xl py-10 md:py-12">
+            <span className="inline-flex items-center gap-2 rounded-full border border-vaani-paper/20 bg-vaani-paper/5 px-3 py-1 text-xs font-medium text-vaani-paper/80 mb-5">
+              <Sparkles className="w-3.5 h-3.5 text-vaani-saffron" /> Clinic command centre
+            </span>
+            <h1 className="text-3xl md:text-[2.6rem] leading-tight font-bold tracking-tight">
+              Your clinic, <span className="vaani-gradient-text">at a glance.</span>
+            </h1>
+            <p className="mt-3 text-[15px] md:text-base text-vaani-paper/80 leading-relaxed max-w-2xl">
+              Ambient note-taking and patient call-backs across the practice. The doctor's review &amp; sign-off
+              always stays in the{' '}
+              <NavLink to="/cockpit" className="underline decoration-vaani-paper/40 underline-offset-2 hover:text-vaani-paper">
+                Cockpit
+              </NavLink>.
             </p>
-          </div>
 
+            {/* Summary stat cards */}
+            <div className="mt-8 grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <HeroStat icon={Users} label="In feed now" value={liveRows.length} sub="patients screened" />
+              <HeroStat icon={CheckCircle2} label="Signed today" value={signedToday} sub="ready for callback" tone="success" />
+              <HeroStat icon={Radio} label="Red-flag cases" value={redToday} sub="routed to RMP" tone="warning" />
+              <HeroStat icon={Stethoscope} label="On call" value={RMP_NAME} sub="reviewing doctor" isText />
+            </div>
+          </div>
+        </section>
+
+        <div className="container max-w-6xl px-4 pt-8 space-y-7">
           {/* Tabs */}
-          <div className="flex items-center gap-1.5 border-b">
-            {TABS.map((t) => (
-              <button
-                key={t.key}
-                onClick={() => setTab(t.key)}
-                className={cn(
-                  'px-3 py-2 text-sm font-medium border-b-2 -mb-px transition',
-                  tab === t.key ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground',
-                )}
-              >
-                {t.label}
-              </button>
-            ))}
+          <div className="flex flex-wrap items-center gap-2">
+            {TABS.map((t) => {
+              const active = tab === t.key;
+              return (
+                <button
+                  key={t.key}
+                  onClick={() => setTab(t.key)}
+                  className={cn(
+                    'group inline-flex items-center gap-2.5 rounded-xl border px-4 py-2.5 text-sm transition',
+                    active
+                      ? 'border-primary/40 bg-primary/10 text-foreground shadow-sm'
+                      : 'border-border bg-card text-muted-foreground hover:text-foreground hover:border-border',
+                  )}
+                >
+                  <t.icon className={cn('w-4 h-4', active ? 'text-warning' : 'text-muted-foreground group-hover:text-foreground')} />
+                  <span className="text-left leading-tight">
+                    <span className={cn('block font-semibold', active && 'text-foreground')}>{t.label}</span>
+                    <span className="block text-[11px] text-muted-foreground">{t.hint}</span>
+                  </span>
+                </button>
+              );
+            })}
           </div>
 
           {tab === 'ops' && (
-            <div className="space-y-6">
+            <div className="space-y-7">
               <AmbientConsultationPanel />
               <OutboundQueuePanel />
             </div>
@@ -97,13 +134,62 @@ export default function ClinicDashboard() {
 }
 
 /* ─────────────────────────────────────────────────────────── */
+/* Hero stat card                                              */
+
+function HeroStat({
+  icon: Icon, label, value, sub, tone, isText,
+}: {
+  icon: typeof Users; label: string; value: number | string; sub: string;
+  tone?: 'success' | 'warning'; isText?: boolean;
+}) {
+  const accentText =
+    tone === 'success' ? 'text-vaani-green' :
+    tone === 'warning' ? 'text-vaani-saffron' :
+    'text-vaani-paper';
+  return (
+    <div className="rounded-2xl border border-vaani-paper/15 bg-vaani-paper/5 backdrop-blur-sm px-4 py-3.5">
+      <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-vaani-paper/65">
+        <Icon className={cn('w-3.5 h-3.5', accentText)} /> {label}
+      </div>
+      <div className={cn('mt-1.5 font-bold tracking-tight', isText ? 'text-lg font-hind' : 'text-2xl tabular-nums')}>
+        {value}
+      </div>
+      <div className="text-[11px] text-vaani-paper/55">{sub}</div>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────── */
 /* Prototype label chip                                        */
 
 function PrototypeChip({ label }: { label: string }) {
   return (
-    <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider rounded-md border border-indigo-500/40 bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 px-2 py-1">
-      <Radio className="w-3 h-3" /> {label}
+    <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider rounded-md border border-accent/40 bg-accent/10 text-accent px-2 py-1">
+      <Sparkles className="w-3 h-3" /> {label}
     </span>
+  );
+}
+
+/* Section header used by the ops cards */
+function SectionHead({
+  icon: Icon, title, subtitle, chip, action,
+}: {
+  icon: typeof Users; title: string; subtitle?: string; chip?: React.ReactNode; action?: React.ReactNode;
+}) {
+  return (
+    <div className="border-b border-border px-5 py-4 flex items-center gap-3 flex-wrap">
+      <span className="w-9 h-9 rounded-xl bg-primary/12 flex items-center justify-center shrink-0">
+        <Icon className="w-4 h-4 text-warning" />
+      </span>
+      <div className="min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="font-semibold">{title}</span>
+          {chip}
+        </div>
+        {subtitle && <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>}
+      </div>
+      {action && <div className="ml-auto">{action}</div>}
+    </div>
   );
 }
 
@@ -161,28 +247,34 @@ function AmbientConsultationPanel() {
   const done = revealed >= SAMPLE_TRANSCRIPT.length;
 
   return (
-    <section className="rounded-2xl border bg-card overflow-hidden">
-      <div className="border-b px-4 py-3 flex items-center gap-2 flex-wrap">
-        <Stethoscope className="w-4 h-4 text-muted-foreground" />
-        <span className="font-semibold">In-Visit Consultation</span>
-        <PrototypeChip label="Prototype Feature – In-Visit Transcription & EMR Autofill" />
-        <button
-          onClick={start}
-          className="ml-auto inline-flex items-center gap-1.5 rounded-lg bg-primary text-primary-foreground px-3 py-1.5 text-sm font-medium hover:opacity-90"
-        >
-          <Play className="w-4 h-4" /> {revealed === 0 ? 'Play ambient demo' : done ? 'Replay' : 'Playing…'}
-        </button>
-      </div>
+    <section className="vaani-elevated overflow-hidden">
+      <SectionHead
+        icon={Stethoscope}
+        title="In-Visit Consultation"
+        subtitle="Listen to the conversation, draft the note — the doctor only reviews."
+        chip={<PrototypeChip label="Prototype · in-visit note autofill" />}
+        action={
+          <button
+            onClick={start}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-primary text-primary-foreground px-3.5 py-2 text-sm font-semibold shadow-sm hover:brightness-105 transition"
+          >
+            <Play className="w-4 h-4" /> {revealed === 0 ? 'Play demo' : done ? 'Replay' : 'Playing…'}
+          </button>
+        }
+      />
 
-      <div className="grid md:grid-cols-2 gap-0 divide-y md:divide-y-0 md:divide-x">
+      <div className="grid md:grid-cols-2 gap-0 divide-y md:divide-y-0 md:divide-x divide-border">
         {/* Transcript */}
-        <div className="p-4 space-y-2 min-h-[320px]">
+        <div className="p-5 space-y-2.5 min-h-[320px]">
           <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1 flex items-center gap-1.5">
-            <Radio className="w-3.5 h-3.5" /> Ambient transcript · diarized
+            <Radio className="w-3.5 h-3.5 text-accent" /> Live transcript · speaker-labelled
           </div>
           {revealed === 0 && (
-            <div className="text-sm text-muted-foreground py-10 text-center">
-              Press <span className="font-medium">Play ambient demo</span> to watch the consult transcribe live.
+            <div className="rounded-xl border border-dashed border-border bg-muted/30 py-12 px-4 text-center">
+              <Radio className="w-6 h-6 mx-auto text-muted-foreground mb-2" />
+              <p className="text-sm text-muted-foreground">
+                Press <span className="font-medium text-foreground">Play demo</span> to watch the consult write itself up.
+              </p>
             </div>
           )}
           <AnimatePresence>
@@ -195,36 +287,36 @@ function AmbientConsultationPanel() {
               >
                 <span className={cn(
                   'shrink-0 text-[10px] font-bold uppercase tracking-wide rounded px-1.5 py-0.5 h-fit',
-                  l.speaker === 'DOCTOR' && 'bg-blue-500/15 text-blue-700 dark:text-blue-300',
-                  l.speaker === 'PATIENT' && 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300',
-                  l.speaker === 'ASHA' && 'bg-amber-500/15 text-amber-700 dark:text-amber-300',
+                  l.speaker === 'DOCTOR' && 'bg-accent/15 text-accent',
+                  l.speaker === 'PATIENT' && 'bg-success/15 text-success',
+                  l.speaker === 'ASHA' && 'bg-warning/15 text-warning',
                 )}>
                   {l.speaker}
                 </span>
-                <span className="text-sm leading-snug">{l.text}</span>
+                <span className="text-sm leading-snug" lang="hi">{l.text}</span>
               </motion.div>
             ))}
           </AnimatePresence>
           {playing && !done && (
             <div className="text-xs text-muted-foreground flex items-center gap-1.5 pt-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" /> transcribing…
+              <span className="w-1.5 h-1.5 rounded-full bg-destructive animate-pulse" /> listening…
             </div>
           )}
         </div>
 
         {/* Live SOAP preview */}
-        <div className="p-4 bg-muted/20">
-          <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2 flex items-center gap-1.5">
-            <FileText className="w-3.5 h-3.5" /> Live SOAP autofill
+        <div className="p-5 bg-muted/30">
+          <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-1.5">
+            <FileText className="w-3.5 h-3.5 text-accent" /> SOAP note · drafting live
           </div>
-          <div className="space-y-3">
+          <div className="space-y-3.5">
             {SAMPLE_SOAP.map((f) => {
               const show = revealed >= f.after;
               return (
                 <div key={f.key}>
-                  <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-0.5">{f.label}</div>
+                  <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">{f.label}</div>
                   {show ? (
-                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-sm leading-relaxed">{f.body}</motion.div>
+                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-sm leading-relaxed text-foreground">{f.body}</motion.div>
                   ) : (
                     <div className="h-4 rounded bg-foreground/5 animate-pulse" />
                   )}
@@ -232,11 +324,11 @@ function AmbientConsultationPanel() {
               );
             })}
             <div>
-              <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">ICD-10</div>
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">ICD-10</div>
               <div className="flex flex-wrap gap-1.5">
                 {SAMPLE_ICD.map((c) => revealed >= c.after ? (
                   <motion.span key={c.code} initial={{ opacity: 0 }} animate={{ opacity: 1 }} title={c.title}
-                    className="rounded-md border bg-secondary/30 px-2 py-0.5 text-xs">ICD-10 {c.code} — {c.title}</motion.span>
+                    className="rounded-md border border-border bg-muted px-2 py-0.5 text-xs text-muted-foreground">ICD-10 {c.code} — {c.title}</motion.span>
                 ) : (
                   <span key={c.code} className="h-5 w-24 rounded bg-foreground/5 animate-pulse inline-block" />
                 ))}
@@ -244,12 +336,12 @@ function AmbientConsultationPanel() {
             </div>
           </div>
           {done && (
-            <div className="mt-4 rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-2.5 text-xs text-emerald-700 dark:text-emerald-300 flex items-center gap-1.5">
-              <CheckCircle2 className="w-3.5 h-3.5" /> EMR drafted — would route to the cockpit for RMP review &amp; sign.
+            <div className="mt-4 rounded-lg border border-success/30 bg-success/10 p-2.5 text-xs text-success flex items-center gap-1.5">
+              <CheckCircle2 className="w-3.5 h-3.5 shrink-0" /> Note drafted — routes to the cockpit for RMP review &amp; sign.
             </div>
           )}
           <p className="mt-3 text-[11px] text-muted-foreground">
-            Demo / sample data. Production path: recorded consult → diarized STT → SOAP + ICD autofill → cockpit.
+            Demo / sample data. In practice: the recorded consult drafts the SOAP note and ICD codes, then hands off to the doctor's cockpit — nothing is finalised without a doctor's signature.
           </p>
         </div>
       </div>
@@ -329,37 +421,40 @@ function OutboundQueuePanel() {
   const [preview, setPreview] = useState<OutboundItem | null>(null);
 
   return (
-    <section className="rounded-2xl border bg-card overflow-hidden">
-      <div className="border-b px-4 py-3 flex items-center gap-2 flex-wrap">
-        <PhoneOutgoing className="w-4 h-4 text-muted-foreground" />
-        <span className="font-semibold">Outbound Communication Queue</span>
-        <PrototypeChip label="Prototype – Post-Approval Callbacks" />
-        <span className="ml-auto text-xs text-muted-foreground">
-          {liveItems.length > 0 ? `${items.length} from live feed` : 'sample data'}
-        </span>
-      </div>
+    <section className="vaani-elevated overflow-hidden">
+      <SectionHead
+        icon={PhoneOutgoing}
+        title="Outbound Communication Queue"
+        subtitle="“The doctor has seen you.” Every callback waits for a signed note."
+        chip={<PrototypeChip label="Prototype · post-approval callbacks" />}
+        action={
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 text-[11px] font-medium text-muted-foreground">
+            {liveItems.length > 0 ? `${items.length} from live feed` : 'sample data'}
+          </span>
+        }
+      />
 
-      <div className="divide-y">
+      <div className="divide-y divide-border">
         {items.map((it) => (
-          <div key={it.id} className="px-4 py-3 flex items-center gap-3 flex-wrap">
+          <div key={it.id} className="px-5 py-3.5 flex items-center gap-3 flex-wrap hover:bg-muted/30 transition-colors">
             <div className={cn('w-1.5 self-stretch rounded-full min-h-[2.5rem]', bandClasses(it.band).dot)} />
             <div className="flex-1 min-w-[160px]">
               <div className="flex items-center gap-2">
-                <span className="font-medium">{it.name}</span>
-                {it.demo && <span className="text-[10px] uppercase tracking-wider rounded bg-foreground/5 text-muted-foreground px-1.5 py-0.5">demo</span>}
+                <span className="font-semibold">{it.name}</span>
+                {it.demo && <span className="text-[10px] uppercase tracking-wider rounded bg-muted text-muted-foreground px-1.5 py-0.5">demo</span>}
               </div>
-              <div className="text-xs text-muted-foreground flex items-center gap-2 flex-wrap">
+              <div className="text-xs text-muted-foreground flex items-center gap-2 flex-wrap mt-0.5">
                 <span>{it.purpose}</span>
-                <span>·</span>
+                <span aria-hidden>·</span>
                 <span className="inline-flex items-center gap-1"><Clock className="w-3 h-3" />{it.scheduledLabel}</span>
               </div>
             </div>
             <StatusBadge status={it.status} />
             <button
               onClick={() => setPreview(it)}
-              className="inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-sm hover:bg-secondary/60"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium hover:border-primary/40 hover:bg-muted transition"
             >
-              <MessageSquare className="w-3.5 h-3.5" /> View callback
+              <MessageSquare className="w-3.5 h-3.5 text-accent" /> View callback
             </button>
           </div>
         ))}
@@ -374,10 +469,10 @@ const STATUS_ORDER: OutboundStatus[] = ['Pending', 'Ready', 'Queued', 'Completed
 function StatusBadge({ status }: { status: OutboundStatus }) {
   const idx = STATUS_ORDER.indexOf(status);
   const cls =
-    status === 'Completed' ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300' :
-    status === 'Queued' ? 'bg-blue-500/15 text-blue-700 dark:text-blue-300' :
-    status === 'Ready' ? 'bg-indigo-500/15 text-indigo-700 dark:text-indigo-300' :
-    'bg-amber-500/15 text-amber-700 dark:text-amber-300';
+    status === 'Completed' ? 'bg-success/15 text-success' :
+    status === 'Queued' ? 'bg-accent/15 text-accent' :
+    status === 'Ready' ? 'bg-primary/15 text-warning' :
+    'bg-muted text-muted-foreground';
   return (
     <span className={cn('inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium', cls)}>
       <span className="font-mono opacity-60">{idx + 1}/4</span> {status}
@@ -390,7 +485,7 @@ function CallbackPreviewDialog({ item, onClose }: { item: OutboundItem | null; o
 
   function play() {
     if (!item) return;
-    // Best-effort browser TTS for the demo; gracefully no-ops if unavailable.
+    // Best-effort in-browser voice preview for the demo; no-ops if unavailable.
     try {
       const synth = window.speechSynthesis;
       if (!synth) { setSpeaking(true); window.setTimeout(() => setSpeaking(false), 1500); return; }
@@ -409,39 +504,41 @@ function CallbackPreviewDialog({ item, onClose }: { item: OutboundItem | null; o
   return (
     <Dialog.Root open={!!item} onOpenChange={(v) => !v && onClose()}>
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 bg-black/50 z-[60] backdrop-blur-sm" />
-        <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[70] w-[95vw] max-w-lg rounded-2xl border bg-card p-0 shadow-2xl">
-          <div className="border-b px-5 py-3 flex items-center gap-3">
-            <Volume2 className="w-4 h-4 text-muted-foreground" />
-            <div className="flex-1">
+        <Dialog.Overlay className="fixed inset-0 bg-secondary/50 z-[60] backdrop-blur-sm" />
+        <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[70] w-[95vw] max-w-lg vaani-elevated p-0 shadow-2xl">
+          <div className="border-b border-border px-5 py-4 flex items-center gap-3">
+            <span className="w-9 h-9 rounded-xl bg-primary/12 flex items-center justify-center shrink-0">
+              <Volume2 className="w-4 h-4 text-warning" />
+            </span>
+            <div className="flex-1 min-w-0">
               <Dialog.Title className="text-base font-semibold">Callback to {item.name}</Dialog.Title>
               <Dialog.Description className="text-xs text-muted-foreground">{item.purpose} · {item.status}</Dialog.Description>
             </div>
-            <Dialog.Close className="rounded-md p-1 hover:bg-secondary/60"><X className="w-4 h-4" /></Dialog.Close>
+            <Dialog.Close className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition"><X className="w-4 h-4" /></Dialog.Close>
           </div>
           <div className="p-5 space-y-4">
             <div>
-              <div className="text-[11px] uppercase tracking-wider text-muted-foreground mb-1">Generated patient message (Hindi)</div>
-              <div className="rounded-lg border bg-muted/30 p-3 text-sm leading-relaxed">{item.messageHi}</div>
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">Patient message (Hindi)</div>
+              <div className="rounded-lg border border-border bg-muted/40 p-3.5 text-sm leading-relaxed" lang="hi">{item.messageHi}</div>
             </div>
             <div>
-              <div className="text-[11px] uppercase tracking-wider text-muted-foreground mb-1">English gloss</div>
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">English gloss</div>
               <div className="text-sm text-muted-foreground leading-relaxed">{item.messageEn}</div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3 flex-wrap">
               <button
                 onClick={play}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-primary text-primary-foreground px-3 py-2 text-sm font-medium hover:opacity-90"
+                className="inline-flex items-center gap-1.5 rounded-lg bg-primary text-primary-foreground px-3.5 py-2 text-sm font-semibold shadow-sm hover:brightness-105 transition"
               >
-                <Play className="w-4 h-4" /> {speaking ? 'Playing…' : 'Play Sample Callback'}
+                <Play className="w-4 h-4" /> {speaking ? 'Playing…' : 'Play sample callback'}
               </button>
               <span className="text-[11px] text-muted-foreground">
-                Demo voice (browser TTS). Production: Sarvam Bulbul → Exotel call.
+                Demo voice preview. In practice, Vaani Didi voice-calls the patient in their language.
               </span>
             </div>
-            <div className="rounded-lg border border-dashed bg-muted/20 p-2.5 text-[11px] text-muted-foreground flex items-center gap-1.5">
-              <Send className="w-3.5 h-3.5" />
-              In production this dispatches only after the RMP signs the SOAP — drug names are scrubbed from the patient message.
+            <div className="rounded-lg border border-dashed border-border bg-muted/30 p-3 text-[11px] text-muted-foreground flex items-start gap-2">
+              <Send className="w-3.5 h-3.5 shrink-0 mt-0.5 text-accent" />
+              The callback is placed only after the RMP signs the SOAP note — and any medicine names are removed from the patient message.
             </div>
           </div>
         </Dialog.Content>

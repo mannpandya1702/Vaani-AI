@@ -65,9 +65,9 @@ function Hero() {
             एक AI सहायक, हर ASHA के लिए — हर मरीज़ की भाषा में।
           </p>
           <p className="mt-4 text-[15px] md:text-base text-vaani-paper/70 leading-relaxed max-w-xl">
-            Voice screening in the patient's own language, deterministic red-flag triage,
-            and a real doctor who reviews, signs, and calls back. Sarvam Indic STT/TTS ·
-            Claude · DPDP-compliant PII redaction · ABDM-ready.
+            Voice screening in the patient's own language, deterministic red-flag
+            triage, and a real doctor who reviews, signs, and calls back —
+            private, DPDP-compliant, and ABDM-ready.
           </p>
 
           <div className="mt-8 flex flex-col sm:flex-row gap-3">
@@ -166,7 +166,7 @@ function Bubble({ who, text }: { who: 'vaani' | 'patient'; text: string }) {
 
 /* ─────────────────────── Trust strip ─────────────────────── */
 function TrustStrip() {
-  const items = ['ABDM-ready', 'DPDP 2023', 'NMC Act 2019', 'Sarvam Indic AI', 'Claude', 'Tele-MANAS 14416'];
+  const items = ['ABDM-ready', 'DPDP 2023', 'NMC Act 2019', '12 Indian languages', 'Doctor-signed notes', 'Tele-MANAS 14416'];
   return (
     <section id="trust" className="border-b border-border bg-muted/40">
       <div className="container max-w-6xl py-5 flex flex-wrap items-center justify-center gap-x-8 gap-y-3">

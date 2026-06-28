@@ -188,7 +188,7 @@ function BottomNav() {
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 border-t bg-background/95 backdrop-blur z-50 safe-area-inset-bottom">
-      <div className="container max-w-screen-md grid grid-cols-4">
+      <div className="container max-w-5xl grid grid-cols-4">
         {tabs.map(({ to, icon: Icon, label, end }) => (
           <NavLink
             key={to}
@@ -322,7 +322,7 @@ function TriageQueue() {
   ];
 
   return (
-    <div className="container max-w-screen-md p-4 space-y-4">
+    <div className="container max-w-5xl p-4 space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-semibold tracking-tight">Triage Queue</h2>
         <div className="flex items-center gap-2 text-sm">
@@ -330,6 +330,14 @@ function TriageQueue() {
           <BandPill band="AMBER" count={counts.AMBER} />
           <BandPill band="GREEN" count={counts.GREEN} />
         </div>
+      </div>
+
+      {/* At-a-glance summary */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <QueueStat label="In queue" value={rows.length} tone="default" icon={LayoutGrid} />
+        <QueueStat label="Awaiting sign-off" value={segCounts.awaiting} tone="warning" icon={Clock} />
+        <QueueStat label="Red flags" value={counts.RED} tone="danger" icon={AlertCircle} />
+        <QueueStat label="Signed" value={segCounts.signed} tone="success" icon={CheckCircle2} />
       </div>
 
       {/* Workflow-state filter */}
@@ -378,26 +386,32 @@ function TriageQueue() {
         </div>
       )}
 
-      <AnimatePresence>
-        {visible.map((row) => (
-          <motion.div
-            key={row.triage.id}
-            layout
-            initial={{ opacity: 0, y: 12, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.96 }}
-          >
-            <TriageCard
-              row={row}
-              onClick={() => setOpenRow(row)}
-              tag={tags[row.triage.id] ?? null}
-              busy={busyId === row.triage.id}
-              onApprove={() => quickApprove(row)}
-              onTag={(t) => tagRow(row, t)}
-            />
-          </motion.div>
-        ))}
-      </AnimatePresence>
+      <div className="grid gap-3 md:grid-cols-2">
+        <AnimatePresence>
+          {visible.map((row) => {
+            const critical = row.triage.band === 'RED' && !row.soap?.mo_signed_at;
+            return (
+              <motion.div
+                key={row.triage.id}
+                layout
+                initial={{ opacity: 0, y: 12, scale: 0.98 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.96 }}
+                className={cn(critical && 'md:col-span-2')}
+              >
+                <TriageCard
+                  row={row}
+                  onClick={() => setOpenRow(row)}
+                  tag={tags[row.triage.id] ?? null}
+                  busy={busyId === row.triage.id}
+                  onApprove={() => quickApprove(row)}
+                  onTag={(t) => tagRow(row, t)}
+                />
+              </motion.div>
+            );
+          })}
+        </AnimatePresence>
+      </div>
 
       <SoapReviewDialog
         open={!!openRow}
@@ -415,6 +429,20 @@ export function BandPill({ band, count }: { band: TriageBand; count: number }) {
       <span className={cn('w-1.5 h-1.5 rounded-full', cls.dot)} />
       {band} <span className="opacity-60">{count}</span>
     </span>
+  );
+}
+
+function QueueStat({ label, value, tone, icon: Icon }: {
+  label: string; value: number; tone: 'default' | 'warning' | 'danger' | 'success'; icon: typeof LayoutGrid;
+}) {
+  const toneCls = { default: 'text-foreground', warning: 'text-warning', danger: 'text-destructive', success: 'text-success' }[tone];
+  return (
+    <div className="vaani-elevated p-4">
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <Icon className="w-3.5 h-3.5" /> {label}
+      </div>
+      <div className={cn('mt-1 text-2xl font-bold tabular-nums', toneCls)}>{value}</div>
+    </div>
   );
 }
 
@@ -553,7 +581,7 @@ function TriageCard({ row, onClick, tag = null, busy = false, onApprove, onTag }
             onClick={() => onTag?.('refer')}
             className={cn(
               'inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs hover:bg-secondary/60',
-              tag === 'refer' && 'border-indigo-500/60 text-indigo-700 dark:text-indigo-300 bg-indigo-500/5',
+              tag === 'refer' && 'border-accent/60 text-accent bg-accent/5',
             )}
           >
             <ArrowUpRight className="w-3.5 h-3.5" /> Refer
@@ -748,7 +776,7 @@ function SoapReviewDialog({
                 onClick={toggleConvo}
                 className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium hover:bg-secondary/40 rounded-lg"
               >
-                <FileText className="w-4 h-4 text-teal-600" />
+                <FileText className="w-4 h-4 text-accent" />
                 <span>Call transcript</span>
                 {convo?.duration_seconds ? (
                   <span className="text-xs text-muted-foreground">· {Math.round(convo.duration_seconds)}s</span>
@@ -770,12 +798,14 @@ function SoapReviewDialog({
                           <div
                             className={cn(
                               'max-w-[85%] rounded-2xl px-3 py-1.5 text-sm',
+                              'border',
                               t.role === 'assistant'
-                                ? 'bg-teal-600/10 rounded-tl-sm'
-                                : 'bg-secondary rounded-tr-sm',
+                                ? 'bg-primary/10 border-primary/15 text-foreground rounded-tl-sm'
+                                : 'bg-card border-border text-foreground rounded-tr-sm',
                             )}
                           >
-                            <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-0.5">
+                            <div className={cn('text-[10px] font-semibold uppercase tracking-wider mb-0.5',
+                              t.role === 'assistant' ? 'text-warning' : 'text-accent')}>
                               {t.role === 'assistant' ? 'वाणी · Vaani' : 'मरीज़ · Patient'}
                             </div>
                             {t.text}
@@ -835,7 +865,7 @@ function SoapReviewDialog({
                                   'rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide',
                                   d.likelihood === 'high' && 'bg-red-500/15 text-red-600 dark:text-red-300',
                                   d.likelihood === 'medium' && 'bg-amber-500/15 text-amber-700 dark:text-amber-300',
-                                  d.likelihood === 'low' && 'bg-secondary text-muted-foreground',
+                                  d.likelihood === 'low' && 'bg-muted text-muted-foreground',
                                 )}>
                                   {d.likelihood}
                                 </span>
@@ -889,11 +919,11 @@ function SoapReviewDialog({
             )}
 
             {row.shadow && (
-              <div className="rounded-xl border-2 border-indigo-500/40 bg-indigo-500/5 p-4 space-y-3">
+              <div className="rounded-xl border-2 border-accent/40 bg-accent/5 p-4 space-y-3">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <Brain className="w-4 h-4 text-indigo-600 dark:text-indigo-300" />
+                  <Brain className="w-4 h-4 text-accent" />
                   <span className="text-sm font-semibold">AI Clinical Opinion</span>
-                  <span className="text-[10px] uppercase tracking-wider rounded bg-indigo-500/15 px-1.5 py-0.5 text-indigo-700 dark:text-indigo-300">
+                  <span className="text-[10px] uppercase tracking-wider rounded bg-accent/10 px-1.5 py-0.5 text-accent">
                     Shadow Diagnosis · MO advisory
                   </span>
                   {row.shadow.urgency && (
@@ -901,7 +931,7 @@ function SoapReviewDialog({
                       'ml-auto rounded-md px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide',
                       row.shadow.urgency === 'Emergency' && 'bg-red-500/15 text-red-600 dark:text-red-300',
                       row.shadow.urgency === 'Urgent' && 'bg-amber-500/15 text-amber-700 dark:text-amber-300',
-                      row.shadow.urgency === 'Routine' && 'bg-secondary text-muted-foreground',
+                      row.shadow.urgency === 'Routine' && 'bg-muted text-muted-foreground',
                     )}>
                       {row.shadow.urgency}
                     </span>
@@ -923,7 +953,7 @@ function SoapReviewDialog({
                     <ol className="space-y-1.5">
                       {row.shadow.differential_diagnoses.slice(0, 3).map((d, i) => (
                         <li key={i} className="flex items-start gap-2">
-                          <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-indigo-500/20 text-[11px] font-semibold text-indigo-700 dark:text-indigo-300">
+                          <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent/15 text-[11px] font-semibold text-accent">
                             {i + 1}
                           </span>
                           <div className="flex-1">
@@ -1033,7 +1063,7 @@ function SoapReviewDialog({
                             <button
                               key={u}
                               onClick={() => setEditUrgency(u)}
-                              className={cn('text-xs px-2 py-1 rounded-md border', editUrgency === u ? 'bg-indigo-500/15 border-indigo-500/40 text-indigo-700 dark:text-indigo-300' : 'hover:bg-secondary/60')}
+                              className={cn('text-xs px-2 py-1 rounded-md border', editUrgency === u ? 'bg-accent/10 border-accent/40 text-accent' : 'hover:bg-secondary/60')}
                             >
                               {u}
                             </button>
@@ -1049,7 +1079,7 @@ function SoapReviewDialog({
                           <button
                             disabled={reviewing}
                             onClick={() => submitShadowReview('edited', { doctor_referral_decision: editReferral, doctor_urgency: editUrgency, doctor_notes: editNotes })}
-                            className="text-sm px-3 py-1.5 rounded-md bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
+                            className="text-sm px-3 py-1.5 rounded-md bg-accent text-accent-foreground hover:brightness-105 disabled:opacity-50"
                           >
                             Save decision
                           </button>
@@ -1228,7 +1258,7 @@ function Patients() {
   const open = openId ? all.find((p) => p.id === openId) ?? null : null;
 
   return (
-    <div className="container max-w-screen-md p-4">
+    <div className="container max-w-5xl p-4">
       <h2 className="text-2xl font-semibold tracking-tight mb-3">Patient Directory</h2>
 
       <div className="relative mb-4">
@@ -1429,21 +1459,35 @@ function NotesIndex() {
   const { data } = useCockpitFeed();
   const rows = (data?.rows ?? []).filter((r) => r.soap?.mo_signed_at);
   return (
-    <div className="container max-w-screen-md p-4">
-      <h2 className="text-2xl font-semibold tracking-tight mb-4">Signed SOAP notes</h2>
-      {rows.length === 0 && <p className="text-sm text-muted-foreground">No signed notes yet.</p>}
-      <ul className="space-y-2">
+    <div className="container max-w-5xl p-4 space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-2xl font-semibold tracking-tight">Signed SOAP notes</h2>
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-success/10 text-success px-3 py-1 text-xs font-semibold">
+          <CheckCircle2 className="w-3.5 h-3.5" /> {rows.length} signed
+        </span>
+      </div>
+      {rows.length === 0 && (
+        <div className="rounded-2xl border border-dashed bg-muted/30 p-12 text-center text-muted-foreground">
+          <FileText className="w-8 h-8 mx-auto mb-2 opacity-30" />
+          No signed notes yet.
+          <div className="mt-1 text-sm">Approve a triage card and the signed note lands here.</div>
+        </div>
+      )}
+      <div className="grid gap-3 md:grid-cols-2">
         {rows.map((r) => (
-          <li key={r.triage.id} className="rounded-lg border bg-card p-3">
+          <div key={r.triage.id} className="vaani-elevated p-4">
             <div className="flex items-center gap-2">
               <BandPill band={r.triage.band} count={1} />
-              <span className="text-sm font-medium truncate">{r.triage.presumptive_label.replace(/_/g, ' ')}</span>
-              <span className="ml-auto text-xs text-muted-foreground">{timeAgo(r.soap!.mo_signed_at!)}</span>
+              <span className="text-sm font-semibold truncate">{r.triage.presumptive_label.replace(/_/g, ' ')}</span>
+              <span className="ml-auto text-xs text-muted-foreground shrink-0">{timeAgo(r.soap!.mo_signed_at!)}</span>
             </div>
-            <div className="text-xs text-muted-foreground mt-1 line-clamp-2">{r.soap?.assessment}</div>
-          </li>
+            <div className="mt-1 text-xs text-muted-foreground truncate">
+              {r.patient?.full_name?.trim() || 'Unknown patient'}
+            </div>
+            <div className="mt-2 text-sm text-foreground/80 line-clamp-3">{r.soap?.assessment}</div>
+          </div>
         ))}
-      </ul>
+      </div>
     </div>
   );
 }
@@ -1464,22 +1508,43 @@ function Me() {
   const rmpReg = ((import.meta as any).env?.VITE_RMP_MCI_REG || '').trim() || '—';
   const agentPhone = (import.meta as any).env?.VITE_AGENT_PHONE_DISPLAY ?? null;
   return (
-    <div className="container max-w-screen-md p-4">
-      <h2 className="text-2xl font-semibold tracking-tight mb-4">You</h2>
-      <div className="rounded-lg border bg-card p-4 mb-4">
-        <div className="text-sm font-semibold">{rmpName}</div>
-        <div className="text-xs text-muted-foreground">MCI / HPR Reg # {rmpReg}</div>
+    <div className="container max-w-5xl p-4 space-y-5">
+      {/* RMP identity */}
+      <div className="vaani-elevated p-6 flex items-center gap-4">
+        <div className="w-14 h-14 rounded-2xl bg-secondary text-secondary-foreground flex items-center justify-center shrink-0">
+          <Stethoscope className="w-7 h-7" />
+        </div>
+        <div className="min-w-0">
+          <div className="text-xl font-bold tracking-tight truncate">{rmpName}</div>
+          <div className="text-sm text-muted-foreground">Registered Medical Practitioner · Reg&nbsp;# {rmpReg}</div>
+        </div>
+        <span className="ml-auto inline-flex items-center gap-1.5 rounded-full bg-success/10 text-success px-3 py-1 text-xs font-semibold">
+          <span className="w-1.5 h-1.5 rounded-full bg-success" /> On call
+        </span>
       </div>
+
+      {/* stats */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <Stat label="Signed today" value={signedToday} />
+        <Stat label="Awaiting you" value={pending} />
+        <Stat label="Signed · all" value={rows.filter((r) => r.soap?.mo_signed_at).length} />
+        <Stat label="Patients seen" value={new Set(rows.map((r) => r.patient?.id).filter(Boolean)).size} />
+      </div>
+
       {agentPhone && (
-        <div className="rounded-lg border bg-card p-4 mb-4">
-          <div className="text-xs uppercase tracking-wider text-muted-foreground mb-1">Vaani agent number</div>
+        <div className="vaani-elevated p-5">
+          <div className="text-xs uppercase tracking-wider text-muted-foreground mb-1">Vaani callback number</div>
           <div className="text-lg font-mono font-semibold">{agentPhone}</div>
-          <div className="text-[11px] text-muted-foreground mt-1">Callbacks + reminders go out from this number.</div>
+          <div className="text-[11px] text-muted-foreground mt-1">Patient callbacks &amp; reminders go out from this number after you sign.</div>
         </div>
       )}
-      <div className="grid grid-cols-2 gap-3">
-        <Stat label="Signed today" value={signedToday} />
-        <Stat label="Pending" value={pending} />
+
+      <div className="rounded-2xl border border-border bg-muted/40 p-5 text-sm text-muted-foreground flex items-start gap-3">
+        <Shield className="w-5 h-5 text-accent shrink-0 mt-0.5" />
+        <div>
+          Every note you sign is attributed to your name and registration under the{' '}
+          <span className="font-medium text-foreground">NMC Act 2019</span>. Vaani screens and drafts — you are the deciding clinician on every case.
+        </div>
       </div>
     </div>
   );
@@ -1487,9 +1552,9 @@ function Me() {
 
 function Stat({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-lg border bg-card p-3">
-      <div className="text-2xl font-bold">{value}</div>
-      <div className="text-xs text-muted-foreground">{label}</div>
+    <div className="vaani-elevated p-4">
+      <div className="text-2xl font-bold tabular-nums">{value}</div>
+      <div className="text-xs text-muted-foreground mt-0.5">{label}</div>
     </div>
   );
 }

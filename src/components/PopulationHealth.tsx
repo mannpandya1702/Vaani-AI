@@ -133,7 +133,7 @@ function Bars({ data, color }: { data: { label: string; value: number; tint?: st
       {data.map((d) => (
         <div key={d.label} className="flex items-center gap-2 text-xs">
           <span className="w-28 shrink-0 truncate text-muted-foreground" title={d.label}>{d.label}</span>
-          <div className="flex-1 h-3 rounded-full bg-foreground/5 overflow-hidden">
+          <div className="flex-1 h-3 rounded-full bg-muted overflow-hidden">
             <div className={cn('h-full rounded-full', d.tint ?? color ?? 'bg-primary')} style={{ width: `${(d.value / max) * 100}%` }} />
           </div>
           <span className="w-7 text-right font-medium tabular-nums">{d.value}</span>
@@ -174,7 +174,13 @@ function LineChart({ series, days }: { series: { name: string; color: string; po
   );
 }
 
-const BAND_HEX: Record<TriageBand, string> = { RED: '#ef4444', AMBER: '#f59e0b', GREEN: '#10b981' };
+// Triage band colours — keep their semantic red / amber(saffron) / green
+// meaning, aligned to the Vaani brand hex values.
+const BAND_HEX: Record<TriageBand, string> = { RED: '#E5484D', AMBER: '#FF9F1C', GREEN: '#2DBE7C' };
+
+// Brand hex for inline SVG charts (these can't take Tailwind classes).
+// Mirrors the design tokens: teal accent · brand red · brand green · saffron.
+const BRAND_HEX = { accent: '#21807A', red: '#CE3539', green: '#1D7A56', saffron: '#F79518' };
 
 /* ─── Main ─────────────────────────────────────────────────── */
 
@@ -233,7 +239,7 @@ export default function PopulationHealth({ liveRows = [] }: { liveRows?: Cockpit
   // Disease trend lines (top-3 symptoms over the window)
   const trend = useMemo(() => {
     const top3 = bySymptom.slice(0, 3);
-    const colors = ['#6366f1', '#ef4444', '#10b981'];
+    const colors = [BRAND_HEX.accent, BRAND_HEX.red, BRAND_HEX.green];
     return top3.map((s, i) => {
       const pts: number[] = Array.from({ length: days }, () => 0);
       for (const r of filtered) {
@@ -251,7 +257,7 @@ export default function PopulationHealth({ liveRows = [] }: { liveRows?: Cockpit
   return (
     <section className="space-y-5">
       {/* Filters */}
-      <div className="rounded-2xl border bg-card p-3 flex flex-wrap items-center gap-2">
+      <div className="vaani-elevated p-3.5 flex flex-wrap items-center gap-2">
         <Filter className="w-4 h-4 text-muted-foreground" />
         <Select label="Date" value={String(days)} onChange={(v) => setDays(Number(v))}
           options={[['7', 'Last 7 days'], ['14', 'Last 14 days'], ['21', 'Last 21 days']]} />
@@ -272,16 +278,16 @@ export default function PopulationHealth({ liveRows = [] }: { liveRows?: Cockpit
 
       {/* KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <KPI icon={Users} label="Patients screened" value={total} tint="text-foreground" />
-        <KPI icon={Flame} label="Red-flag cases" value={redFlags} tint="text-red-600 dark:text-red-400" sub={`${pct(redFlags, total)} of total`} />
-        <KPI icon={ArrowUpRight} label="Referrals" value={referrals} tint="text-indigo-600 dark:text-indigo-400" sub={`${pct(referrals, total)} referral rate`} />
-        <KPI icon={AlertTriangle} label="High-risk (RED)" value={highRisk.length} tint="text-amber-600 dark:text-amber-400" />
+        <KPI icon={Users} label="Patients screened" value={total} tint="text-accent" />
+        <KPI icon={Flame} label="Red-flag cases" value={redFlags} tint="text-destructive" sub={`${pct(redFlags, total)} of total`} />
+        <KPI icon={ArrowUpRight} label="Referrals" value={referrals} tint="text-accent" sub={`${pct(referrals, total)} referral rate`} />
+        <KPI icon={AlertTriangle} label="High-risk (RED)" value={highRisk.length} tint="text-warning" />
       </div>
 
       <div className="grid lg:grid-cols-2 gap-5">
         {/* Interactive map */}
         <Panel title="Village / District map" icon={MapIcon} note="schematic — click a village to filter">
-          <svg viewBox="0 0 100 100" className="w-full h-auto rounded-lg bg-emerald-500/5 border">
+          <svg viewBox="0 0 100 100" className="w-full h-auto rounded-lg bg-accent/5 border border-border">
             {VILLAGES.map((v) => {
               const e = byVillage.get(v.name);
               const count = e?.count ?? 0;
@@ -329,7 +335,7 @@ export default function PopulationHealth({ liveRows = [] }: { liveRows?: Cockpit
                       return (
                         <td key={v.name}>
                           <div title={`${s} · ${v.name}: ${c}`} className="w-6 h-6 rounded grid place-items-center text-foreground/70"
-                            style={{ background: `rgba(239,68,68,${c === 0 ? 0.04 : 0.15 + (c / heatMax) * 0.7})` }}>
+                            style={{ background: `hsl(358 64% 49% / ${c === 0 ? 0.05 : 0.12 + (c / heatMax) * 0.62})` }}>
                             {c > 0 ? c : ''}
                           </div>
                         </td>
@@ -349,7 +355,7 @@ export default function PopulationHealth({ liveRows = [] }: { liveRows?: Cockpit
 
         {/* Top symptoms */}
         <Panel title="Top reported symptoms" icon={Activity}>
-          <Bars data={bySymptom.slice(0, 7)} color="bg-indigo-500" />
+          <Bars data={bySymptom.slice(0, 7)} color="bg-accent" />
         </Panel>
 
         {/* Village distribution */}
@@ -357,13 +363,13 @@ export default function PopulationHealth({ liveRows = [] }: { liveRows?: Cockpit
           <Bars
             data={VILLAGES.map((v) => ({ label: `${v.name}`, value: byVillage.get(v.name)?.count ?? 0 }))
               .sort((a, b) => b.value - a.value)}
-            color="bg-emerald-500"
+            color="bg-success"
           />
         </Panel>
 
         {/* Red-flag counts */}
         <Panel title="Red-flag case counts" icon={Flame} note="by category">
-          <Bars data={byRedFlag.slice(0, 7).map((d) => ({ ...d, tint: 'bg-red-500' }))} />
+          <Bars data={byRedFlag.slice(0, 7).map((d) => ({ ...d, tint: 'bg-destructive' }))} />
         </Panel>
 
         {/* Referral statistics */}
@@ -371,7 +377,7 @@ export default function PopulationHealth({ liveRows = [] }: { liveRows?: Cockpit
           <div className="flex items-center gap-4">
             <Donut referred={referrals} total={total} />
             <div className="text-sm space-y-1">
-              <div><span className="font-semibold text-indigo-600 dark:text-indigo-400">{referrals}</span> referred ({pct(referrals, total)})</div>
+              <div><span className="font-semibold text-accent">{referrals}</span> referred ({pct(referrals, total)})</div>
               <div className="text-muted-foreground">{total - referrals} managed locally</div>
               <div className="text-xs text-muted-foreground mt-1">RED referral rate: {pct(highRisk.filter((r) => r.referred).length, highRisk.length)}</div>
             </div>
@@ -385,7 +391,7 @@ export default function PopulationHealth({ liveRows = [] }: { liveRows?: Cockpit
               <li key={r.id} className="flex items-center gap-2 text-xs">
                 <span className={cn('w-1.5 h-1.5 rounded-full', bandClasses('RED').dot)} />
                 <span className="font-medium truncate">{r.name}</span>
-                {r.live && <span className="text-[9px] uppercase rounded bg-foreground/5 px-1">live</span>}
+                {r.live && <span className="text-[9px] uppercase tracking-wider rounded bg-success/15 text-success px-1">live</span>}
                 <span className="text-muted-foreground truncate">{r.disease}</span>
                 <span className="ml-auto text-muted-foreground whitespace-nowrap">{r.village}</span>
               </li>
@@ -396,8 +402,8 @@ export default function PopulationHealth({ liveRows = [] }: { liveRows?: Cockpit
       </div>
 
       <p className="text-[11px] text-muted-foreground">
-        Prototype analytics. Demo dataset uses the real schema fields (village_name / district_code / state_code / pin_code);
-        live screenings from the feed are folded into the totals and tagged <span className="font-medium">live</span>.
+        Prototype analytics with a sample village dataset. Real screenings from the feed are folded into the totals
+        and tagged <span className="font-medium">live</span>. Aggregated, de-identified — no patient is named outside the doctor's cockpit.
       </p>
     </section>
   );
@@ -427,9 +433,9 @@ function Select({ label, value, onChange, options }: { label: string; value: str
 
 function KPI({ icon: Icon, label, value, sub, tint }: { icon: typeof Users; label: string; value: number; sub?: string; tint?: string }) {
   return (
-    <div className="rounded-2xl border bg-card p-4">
-      <div className="flex items-center gap-1.5 text-xs text-muted-foreground"><Icon className={cn('w-3.5 h-3.5', tint)} />{label}</div>
-      <div className="text-2xl font-bold mt-1">{value}</div>
+    <div className="vaani-elevated p-4">
+      <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"><Icon className={cn('w-3.5 h-3.5', tint)} />{label}</div>
+      <div className="text-2xl font-bold mt-1 tabular-nums">{value}</div>
       {sub && <div className="text-[11px] text-muted-foreground">{sub}</div>}
     </div>
   );
@@ -437,9 +443,9 @@ function KPI({ icon: Icon, label, value, sub, tint }: { icon: typeof Users; labe
 
 function Panel({ title, icon: Icon, note, children }: { title: string; icon: typeof Users; note?: string; children: ReactNode }) {
   return (
-    <div className="rounded-2xl border bg-card p-4">
-      <div className="flex items-center gap-2 mb-3">
-        <Icon className="w-4 h-4 text-muted-foreground" />
+    <div className="vaani-elevated p-5">
+      <div className="flex items-center gap-2 mb-3.5">
+        <Icon className="w-4 h-4 text-accent" />
         <span className="font-semibold text-sm">{title}</span>
         {note && <span className="ml-auto text-[11px] text-muted-foreground">{note}</span>}
       </div>
@@ -458,7 +464,7 @@ function Donut({ referred, total }: { referred: number; total: number }) {
   return (
     <svg viewBox="0 0 44 44" className="w-20 h-20 -rotate-90">
       <circle cx={22} cy={22} r={R} fill="none" stroke="currentColor" className="text-foreground/10" strokeWidth={6} />
-      <circle cx={22} cy={22} r={R} fill="none" stroke="#6366f1" strokeWidth={6} strokeLinecap="round"
+      <circle cx={22} cy={22} r={R} fill="none" stroke={BRAND_HEX.accent} strokeWidth={6} strokeLinecap="round"
         strokeDasharray={`${frac * C} ${C}`} />
       <text x={22} y={22} textAnchor="middle" dominantBaseline="central" className="rotate-90 fill-foreground font-semibold" fontSize={9} style={{ transformOrigin: 'center' }}>
         {pct(referred, total)}

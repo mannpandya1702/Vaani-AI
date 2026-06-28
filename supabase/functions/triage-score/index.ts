@@ -614,7 +614,7 @@ async function forceRedBand(
       confidence: 1.0,
       needs_mo_review: true,
       reasoning: `Rules-first RED: ${refined.red_flag_categories.join(',')}`,
-      summary_en: `Red flag detected via deterministic rule layer. Skipping LLM.`,
+      summary_en: `Danger sign detected on the clinical red-flag checklist — fast-tracked to a doctor for urgent review.`,
       recommended_action: refined.recommended_action,
       classifier_model: 'rules-only',
       classifier_prompt_version: 'rules-v1',

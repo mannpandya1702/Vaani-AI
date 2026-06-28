@@ -159,7 +159,7 @@ export default function AshaLiveKit() {
       </div>
 
       <p className="mt-5 text-[11px] text-vaani-paper/60 max-w-sm text-center">
-        LiveKit voice · Sarvam Indic STT/TTS · DPDP-compliant · no AI signs a note.
+        In your language · private &amp; DPDP-compliant · a doctor signs every note.
       </p>
       {/* agent audio sinks mount here */}
       <div ref={audioBoxRef} className="hidden" />
