@@ -24,8 +24,10 @@ WORKDIR /app
 COPY requirements.txt ./
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
-# Copy the worker.
+# Copy the worker + the clinical prompt(s). Without the prompt the agent runs
+# on a minimal fallback and never conducts the interview.
 COPY agent.py ./
+COPY prompts/ ./prompts/
 
 # Bake model weights into the image so cold starts don't download Silero VAD
 # and the multilingual turn-detector at runtime. (This is the LiveKit-

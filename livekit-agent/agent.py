@@ -133,9 +133,12 @@ SARVAM_TTS_PACE = float(os.environ.get("SARVAM_TTS_PACE", "1.0"))
 RMP_NAME = os.environ.get("RMP_NAME", "डॉक्टर साहब")
 RMP_MCI_REG = os.environ.get("RMP_MCI_REG", "")
 
-# Prompt files live in the repo's docs/prompts. Allow override via env so the
-# worker is portable when copied out of the monorepo.
-_DEFAULT_PROMPT_DIR = Path(__file__).resolve().parent.parent / "docs" / "prompts"
+# Prompt files: bundled into the image at ./prompts (Docker build context) so
+# the deployed worker has them; falls back to the repo's docs/prompts for local
+# dev runs from the monorepo. Override via env.
+_LOCAL_PROMPT_DIR = Path(__file__).resolve().parent / "prompts"
+_REPO_PROMPT_DIR = Path(__file__).resolve().parent.parent / "docs" / "prompts"
+_DEFAULT_PROMPT_DIR = _LOCAL_PROMPT_DIR if (_LOCAL_PROMPT_DIR / "vaani-hi-v3.md").exists() else _REPO_PROMPT_DIR
 PROMPT_DIR = Path(os.environ.get("VAANI_PROMPT_DIR", str(_DEFAULT_PROMPT_DIR)))
 _PROMPT_FILE = {"hi": "vaani-hi-v3.md", "ta": "vaani-ta-v3.md"}
 
