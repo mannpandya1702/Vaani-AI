@@ -195,6 +195,102 @@ Deno.serve(async (req) => {
     return redactedText;
   };
 
+  // ── OpenAI branch (VOICE_LLM_MODEL = gpt-*) ─────────────────
+  // The agent already speaks OpenAI chat-completions, so this is a near
+  // passthrough: redact each turn's PII in place, remap the params the
+  // GPT-5 family is fussy about (max_tokens → max_completion_tokens;
+  // reasoning_effort:none for instant turns; drop the incoming temperature,
+  // which gpt-5.2 rejects unless it's the default), forward, and stream the
+  // OpenAI SSE straight back — no Anthropic translation. STEP 1's statutory
+  // refusal scripts already fired above, so a PCPNDT/MHCA/POCSO turn never
+  // reaches GPT either. Redaction (STEP 2 redact()) still runs on every turn,
+  // so no raw PII crosses to OpenAI US — DPDP §16 / ABDM HDM ¶7.6 hold.
+  const isOpenAiModel = /^(gpt|o\d|chatgpt)/i.test(VOICE_LLM_MODEL);
+  if (isOpenAiModel) {
+    const openaiKey = Deno.env.get('OPENAI_API_KEY') ?? '';
+    if (!openaiKey) return jsonErr(500, 'missing_openai_key');
+
+    const openaiDialogue = await Promise.all(dialogue.map(async (m) => {
+      if (m.role === 'assistant') {
+        const out: Record<string, unknown> = {
+          role: 'assistant',
+          content: typeof m.content === 'string' ? m.content : (m.content ?? null),
+        };
+        if (m.tool_calls?.length) {
+          out.tool_calls = await Promise.all(m.tool_calls.map(async (tc) => ({
+            id: tc.id,
+            type: 'function',
+            function: { name: tc.function?.name, arguments: await redact(tc.function?.arguments ?? '{}') },
+          })));
+        }
+        return out;
+      }
+      if (m.role === 'tool') {
+        const text = typeof m.content === 'string' ? m.content : JSON.stringify(m.content ?? '');
+        return { role: 'tool', tool_call_id: m.tool_call_id ?? '', content: await redact(text) };
+      }
+      return { role: 'user', content: await redact(typeof m.content === 'string' ? m.content : '') };
+    }));
+
+    const openaiMessages = [{ role: 'system', content: systemPrompt }, ...openaiDialogue];
+
+    auditCrossBorderTransfer({
+      callId: dbCallId ?? undefined,
+      provider: 'openai',
+      model: VOICE_LLM_MODEL,
+      region: 'us-east-1',
+      regionAttestedBy: 'openai_api_default',
+      payloadPiiRedacted: true,
+      redactionMethod: 'pii_token_map_v1',
+      redactionSessionToken: sessionToken,
+      payloadText: JSON.stringify(openaiMessages),
+    }).catch((e) => console.error('[cross-border-audit]', e));
+
+    const openaiBody: Record<string, unknown> = {
+      model: VOICE_LLM_MODEL,
+      messages: openaiMessages,
+      max_completion_tokens: (body as any).max_completion_tokens ?? body.max_tokens ?? 384,
+      stream: wantsStream,
+    };
+    if (Array.isArray(body.tools) && body.tools.length) openaiBody.tools = body.tools;
+    if (body.tool_choice) openaiBody.tool_choice = body.tool_choice;
+    // gpt-5.* reasoning models: 'none' = instant (zero reasoning tokens),
+    // the lowest-latency mode for live voice. chat-latest is NOT a reasoning
+    // model and 400s on reasoning_effort, so guard it out.
+    if (/^gpt-5/i.test(VOICE_LLM_MODEL) && !/chat/i.test(VOICE_LLM_MODEL)) {
+      openaiBody.reasoning_effort = 'none';
+    }
+
+    const oaUpstream = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${openaiKey}`, 'content-type': 'application/json' },
+      body: JSON.stringify(openaiBody),
+    });
+
+    if (!oaUpstream.ok) {
+      const errText = await oaUpstream.text();
+      console.error('[vapi-custom-llm] openai upstream error', oaUpstream.status, errText.slice(0, 200));
+      return jsonErr(502, 'openai_upstream_error', `${oaUpstream.status}: ${errText.slice(0, 200)}`);
+    }
+
+    // OpenAI already emits OpenAI format — the agent consumes it directly.
+    if (wantsStream) {
+      return new Response(oaUpstream.body, {
+        status: 200,
+        headers: {
+          ...corsHeaders,
+          'content-type': 'text/event-stream; charset=utf-8',
+          'cache-control': 'no-cache',
+          'connection': 'keep-alive',
+        },
+      });
+    }
+    return new Response(await oaUpstream.text(), {
+      status: 200,
+      headers: { ...corsHeaders, 'content-type': 'application/json' },
+    });
+  }
+
   // Build messages in PARALLEL (Promise.all), not a sequential await-per-message
   // loop — and DON'T redact Vaani's OWN output (assistant text is PII-free by
   // prompt design; only patient utterances + tool args/results carry PII).
