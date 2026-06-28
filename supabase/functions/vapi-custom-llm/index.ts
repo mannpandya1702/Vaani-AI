@@ -45,6 +45,7 @@ import { verifyBearer } from '../_shared/constant-time-compare.ts';
 import { supabaseAdmin } from '../_shared/supabase-admin.ts';
 import { redactPII } from '../_shared/pii-redactor.ts';
 import { checkRefusal, scriptForLang } from '../_shared/refusal-scripts.ts';
+import { auditCrossBorderTransfer } from '../_shared/cross-border-audit.ts';
 
 const ANTHROPIC_KEY = Deno.env.get('ANTHROPIC_API_KEY') ?? '';
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
@@ -123,14 +124,22 @@ Deno.serve(async (req) => {
   // Map VAPI's vapi_call_id → our calls.id (if a row exists). Best-effort.
   const vapiCallId = body.call?.id ?? null;
   let dbCallId: string | null = null;
+  let patientId: string | null = null;
+  let tenantId: string | null = null;
+  let callLang: string | null = null;
   if (vapiCallId) {
-    const { data } = await sb.from('calls').select('id, lang_declared, lang_detected, patient_id').eq('vapi_call_id', vapiCallId).maybeSingle();
+    const { data } = await sb.from('calls')
+      .select('id, lang_declared, lang_detected, patient_id, tenant_id')
+      .eq('vapi_call_id', vapiCallId).maybeSingle();
     dbCallId = data?.id ?? null;
+    patientId = (data as any)?.patient_id ?? null;
+    tenantId = (data as any)?.tenant_id ?? null;
+    callLang = (data as any)?.lang_declared ?? (data as any)?.lang_detected ?? null;
   }
 
-  // Decide language: VAPI doesn't pass it explicitly. Default hi.
-  // (Later, the patient row will tell us.)
-  const lang = 'hi';
+  // Refusal-script language from the call (Tamil routes through this proxy too
+  // now — a Tamil PCPNDT/MHCA refusal must speak the Tamil script). Default hi.
+  const lang = callLang ?? 'hi';
 
   // ── STEP 1: Refusal interception (D2) ───────────────────────
   // Find the latest user message; check against checkRefusal.
@@ -144,15 +153,20 @@ Deno.serve(async (req) => {
       // Audit: write a refusal_log row so we have a permanent record
       // that the deterministic script fired (not Claude's improv).
       if (dbCallId) {
+        // Columns must match the live table (category/trigger_text/
+        // refusal_script_used are NOT NULL). The prior insert used
+        // script_id/spoken_text/lang/source — none exist — so every
+        // live-voice refusal silently failed to log (refusal_log=0).
+        // PCPNDT rows additionally require audio evidence (chk_pcpndt_complete)
+        // which this text proxy has no access to — those are completed by the
+        // post-call audit path. MHCA / POCSO / drug-Rx log fine here.
         await sb.from('refusal_log').insert({
           call_id: dbCallId,
+          patient_id: patientId,
+          tenant_id: tenantId,
           category: match.category,
-          script_id: match.script_id,
-          script_version: 'v2',
-          lang,
-          source: 'vapi_custom_llm_intercept',
-          spoken_text: refusalText,
-          matched_phrase_redacted: match.matched_phrase_redacted,
+          trigger_text: match.matched_phrase_redacted,
+          refusal_script_used: match.script_id,
         }).then(() => {}, (e: any) => console.error('[refusal_log insert]', e));
       }
       return openaiResponse(refusalText, body.model ?? 'claude-sonnet-4-6', wantsStream);
@@ -202,15 +216,23 @@ Deno.serve(async (req) => {
   }));
 
   // ── STEP 3: cross_border_transfers audit log ────────────────
-  await sb.from('cross_border_transfers').insert({
-    call_id: dbCallId,
-    target_region: 'us-east-1',
-    target_provider: 'anthropic',
-    redaction_method: 'pii_token_map_v1',
-    redaction_session_token: sessionToken,
-    payload_size_bytes: JSON.stringify(anthropicMessages).length,
-    purpose: 'live_voice_screening',
-  }).then(() => {}, (e: any) => console.error('[cross-border-audit]', e));
+  // Use the shared helper (same path the post-call functions use, which
+  // writes correctly). The prior inline insert used non-existent columns
+  // (target_region/target_provider/payload_size_bytes/purpose) so every
+  // live-voice turn transferred to US Claude with ZERO audit row. Kept
+  // non-blocking (.catch) so a transient audit failure never breaks a
+  // live call; the helper still re-scans for phone/ABHA/Aadhaar leaks.
+  auditCrossBorderTransfer({
+    callId: dbCallId ?? undefined,
+    provider: 'anthropic',
+    model: 'claude-sonnet-4-6',
+    region: 'us-east-1',
+    regionAttestedBy: 'anthropic_api_default',
+    payloadPiiRedacted: true,
+    redactionMethod: 'pii_token_map_v1',
+    redactionSessionToken: sessionToken,
+    payloadText: JSON.stringify(anthropicMessages),
+  }).catch((e) => console.error('[cross-border-audit]', e));
 
   // ── STEP 4: Call Claude with cache_control on system + tools ──
   const anthropicTools = toAnthropicTools(body.tools);

@@ -46,21 +46,34 @@ const TRIGGERS: Record<RefusalCategory, RegExp[]> = {
     /ஆண்.{0,20}பெண்/,
     /பெண்.{0,20}ஆண்/,
   ],
+  // NOTE: JS \b is ASCII-only — it does NOT mark a boundary before/after
+  // Devanagari/Tamil glyphs, so \b-wrapped Indic alternatives never match.
+  // Deepgram returns Devanagari, so Indic terms are split into their OWN
+  // \b-free patterns below (romanized/English keep \b to avoid sub-word FPs).
   mhca_suicidal_ideation: [
     /\b(suicide|suicidal|kill myself|end my life|end it all|don'?t want to live|want to die)\b/i,
-    /\b(jaan dena|jaan dene|marne ka man|marna chahta|marna chahti|khatam kar|khud ko khatam|aatmahatya|आत्महत्या|खुदकुशी|जीना नहीं|मरना चाहता|मरना चाहती|खुद को नुकसान|खुद को मारना)\b/iu,
-    /\b(தற்கொலை|சாக.{0,10}வேண்டும்|உயிர்.{0,15}மாய)/u,
+    /\b(jaan dena|jaan dene|marne ka man|marna chahta|marna chahti|khatam kar|khud ko khatam|aatmahatya)\b/i,
+    /(आत्महत्या|ख़ुदकुशी|खुदकुशी|जीना नहीं चाह|जीने का मन नहीं|मरना चाहत|मर जाऊँ|मर जाऊं|जान दे ?दूँ|जान देने|खुद को ख़त्म|खुद को खत्म|खुद को मार|खुद को नुकसान)/u,
+    /(தற்கொலை|சாக.{0,10}வேண்டும்|உயிர்.{0,15}மாய)/u,
   ],
   pocso_csa_disclosure: [
     // Patient must be <18 — caller layer must gate before calling
-    /\b(bachcha|bachchi|child|kid|बच्चा|बच्ची|குழந்தை)\b.{0,40}\b(abuse|touch|molest|hurt|दुर्व्यवहार|गलत तरीके|छेड़|தீங்கு)/iu,
-    /\b(chacha|mama|uncle|teacher|cousin|काका|मामा|चाचा).{0,40}(galat tarike|haath laga|छेड़|touched|hit|kissed)/iu,
-    /\b(touch.{0,15}private|private.{0,15}touch|niji.{0,15}ang|गुप्तांग|छिपा.{0,10}अंग)/iu,
+    /\b(bachcha|bachchi|child|kid)\b.{0,40}\b(abuse|touch|molest|hurt)/i,
+    /(बच्चा|बच्ची|बच्चे|குழந்தை).{0,40}(दुर्व्यवहार|गलत तरीके|गलत काम|हाथ लगा|छेड़|गुप्तांग|बुरी नीयत|தீங்கு|abuse|touch|molest)/u,
+    /\b(chacha|mama|uncle|teacher|cousin)\b.{0,40}(galat tarike|haath laga|touched|hit|kissed)/i,
+    /(काका|मामा|चाचा|अंकल|टीचर|मास्टर).{0,40}(गलत तरीके|गलत काम|हाथ लगा|छेड़|छुआ)/u,
+    /(touch.{0,15}private|private.{0,15}touch|niji.{0,15}ang)/i,
+    /(गुप्तांग|निजी अंग|छिपा.{0,10}अंग).{0,15}(छुआ|हाथ|छेड़|touch)/u,
   ],
   drug_prescription_attempt: [
-    // Patient asking WHICH medicine — must refuse + route to MO
-    /\b(which|what|kaunsi|konsi|kya).{0,20}(medicine|tablet|dawa|dawai|pill|दवा|दवाई|गोली|மருந்து)\b/i,
-    /\b(prescribe|prescription|likhd?o|likh kar|गोली.{0,10}लिख|nuska)/iu,
+    // Patient asking WHICH medicine / to prescribe — refuse + route to MO.
+    // Devanagari patterns are specific (require an ask/prescribe verb) so
+    // ordinary clinical talk ("मैंने दवा ली थी") does NOT false-trigger.
+    /\b(which|what|kaunsi|konsi)\b.{0,20}(medicine|tablet|dawa|dawai|pill)/i,
+    /\b(prescribe|prescription|likhd?o|likh kar|nuska)\b/i,
+    /(कौन ?सी|कौनसी)\s{0,3}(दवा|दवाई|गोली|टैबलेट)/u,
+    /(दवा|दवाई|गोली|टैबलेट)\s{0,6}(लिख ?दीज|लिख ?दो|लिख ?देना|बता ?दीज|बता ?दो|दे ?दीज|दे ?दो|सुझा)/u,
+    /(कोई)\s{0,3}(दवा|दवाई|गोली|टैबलेट)\s{0,6}(लिख|बता|दे|सुझा)/u,
   ],
 };
 
@@ -109,7 +122,7 @@ const SCRIPTS: Record<RefusalCategory, Omit<RefusalMatch, 'category' | 'matched_
   drug_prescription_attempt: {
     script_id: 'refusal_drug_rx_v1',
     script_hi:
-      'मैं दवा की सलाह नहीं दे सकती। डॉक्टर साहब आपकी जानकारी देखकर पर्ची भेजेंगे।',
+      'दवा की सलाह यहाँ से नहीं दी जा सकती। डॉक्टर साहब आपकी जानकारी देखकर पर्ची भेजेंगे।',
     script_ta:
       'என்னால் மருந்து பரிந்துரைக்க முடியாது. டாக்டர் உங்கள் தகவலைப் பார்த்து மருந்துச் சீட்டை அனுப்புவார்.',
     script_en:

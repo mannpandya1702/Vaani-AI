@@ -14,16 +14,15 @@
 
 import { corsHeaders, handleCorsPreflight } from '../_shared/cors.ts';
 import { supabaseAdmin } from '../_shared/supabase-admin.ts';
+import { authorizeCockpitRequest } from '../_shared/cockpit-auth.ts';
 
 Deno.serve(async (req) => {
   const pre = handleCorsPreflight(req);
   if (pre) return pre;
 
-  // Anon-key bearer is fine for the demo cockpit. We're not authenticating
-  // a specific MO yet; the data is read-only summary for the demo tenant.
-  // Block totally unauthenticated requests though.
-  const auth = req.headers.get('authorization') ?? '';
-  if (!auth.startsWith('Bearer ')) {
+  // Service-role (RLS-bypassing) read of patient PII — require a real project
+  // JWT (anon/authenticated) or the master key, not just any non-empty bearer.
+  if (!authorizeCockpitRequest(req)) {
     return new Response('unauthorized', { status: 401, headers: corsHeaders });
   }
 
