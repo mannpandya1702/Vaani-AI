@@ -9,7 +9,6 @@
 // ──────────────────────────────────────────────────────────────────
 import { useEffect, useRef, useState } from 'react';
 import { Room, RoomEvent, Track, ConnectionState } from 'livekit-client';
-import { supabase } from '@/integrations/supabase/client';
 import { Mic, PhoneOff, Loader2, Globe } from 'lucide-react';
 
 type Lang = 'hi' | 'ta';
@@ -34,8 +33,10 @@ export default function AshaLiveKit() {
     setAgentJoined(false);
     try {
       // Prefer the authenticated session token; fall back to the anon key.
-      const { data: { session } } = await supabase.auth.getSession();
-      const bearer = session?.access_token ?? ANON;
+      // The token endpoint validates a project JWT via authorizeCockpitRequest,
+      // which checks the `ref` claim — the anon key carries it, a user session
+      // token does not. Send the anon key (same as the cockpit's own calls).
+      const bearer = ANON;
 
       const resp = await fetch(`${FN_BASE}/livekit-token`, {
         method: 'POST',

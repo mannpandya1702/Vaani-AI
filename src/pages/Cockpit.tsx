@@ -1013,8 +1013,18 @@ function SoapReviewDialog({
                 animate={{ scale: 1, opacity: 1 }}
                 className="flex-1 flex items-center gap-2 text-sm text-emerald-700 dark:text-emerald-400"
               >
-                <CheckCircle2 className="w-4 h-4" />
-                <span className="truncate">Sent: "{soulMessage}"</span>
+                <CheckCircle2 className="w-4 h-4 shrink-0" />
+                {/* Manual play: the sign→TTS round-trip takes seconds, so the
+                    auto-play() fires outside the user-gesture window and the
+                    browser blocks it. A fresh click always plays. */}
+                <button
+                  onClick={() => audioRef.current?.play().catch(() => {/* noop */})}
+                  title="Play Vaani's callback to the patient"
+                  className="inline-flex items-center gap-1 font-semibold rounded-md bg-emerald-600 text-white px-2.5 py-1 hover:bg-emerald-700 shrink-0"
+                >
+                  ▶ Play callback
+                </button>
+                <span className="truncate text-xs">{soulMessage}</span>
               </motion.div>
             ) : (
               <div className="flex-1 text-xs text-muted-foreground">
