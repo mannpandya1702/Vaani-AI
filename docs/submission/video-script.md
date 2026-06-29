@@ -12,28 +12,28 @@ Format cue: `[SHOW]` = what's on screen · `[SAY]` = what you say (calm, confide
 ### 0:35 – 1:50 · THE LIVE DEMO  *(the heart — let it breathe)*
 [SHOW] Screen-record `vaani-ai-azure.vercel.app/asha`. Start the call. Speak Hindi: *"नमस्ते… दो दिन से तेज़ बुख़ार है और कँपकँपी हो रही है।"* Let Vaani greet, take consent, ask your name, walk the danger-sign questions, give age. Hang up.
 [SAY] (over the call) "She greets, captures consent under the DPDP Act, asks who's calling, then walks a clinician's history chain — complaint, onset, severity, the complaint-specific danger signs, age and sex — all in natural Hindi, with English and Tamil code-switching handled."
-[SHOW] Switch to the cockpit (`/rmp`). Within ~10 seconds the **card appears** — patient name, the triage band, the SOAP note, and the **AI Clinical Opinion** (shadow differential). Click it. Click **Approve & Sign.**
+[SHOW] Switch to the cockpit (`/cockpit`). Within ~10 seconds the **card appears** — patient name, the triage band, the SOAP note, and the **AI Clinical Opinion** (shadow differential). Click it. Click **Approve & Sign.**
 [SAY] "Seconds after she hangs up, a card lands in front of a real Registered Medical Practitioner — SMC-verified, ABDM-linked. They see the structured history, an ICD-10 SOAP note, and a separate AI second-opinion. The doctor reviews, and signs."
 [SHOW] The **Hindi callback audio plays**: *"नमस्ते। डॉक्टर साहब ने आपकी पूरी रिपोर्ट देख ली है…"*
 [SAY] "And here's the moment we built everything for — Vaani calls the patient back, in their language: *the doctor has seen you.* That's the failure of every telehealth product: the patient never knows if a doctor actually looked. We close that loop. **No AI signs a note. No AI dispenses care.** The AI is the listener; the doctor is the decider."
 
 ### 1:50 – 2:25 · CLINICAL STAGE + DEPTH  *(point 1)*
 [SHOW] One clean slide: "Stage 1 — Pre-Visit Capture" highlighted, the other four stages dimmed beneath it.
-[SAY] "We scope tightly to one named stage — Stage one, pre-visit capture: vernacular history into a structured SOAP summary, before the consult. We never diagnose or prescribe to the patient. And because the doctor's time is the scarce resource, we integrate the stages that protect it — an independent shadow diagnosis for benchmarking, low-cost vernacular STT, and the closed-loop callback."
+[SAY] "We scope tightly to one named stage — Stage one, pre-visit capture: vernacular history into a structured SOAP summary, before the consult. We never diagnose or prescribe to the patient. And because the doctor's time is the scarce resource, we integrate the stages that protect it — an independent shadow diagnosis for benchmarking, low-cost vernacular STT, the closed-loop callback, and a follow-up that calls the patient back days later — better, the same, or worse — and *re-escalates a worsening patient straight back to the doctor.*"
 
 ### 2:25 – 3:00 · VERNACULAR VOICE-DATA COLLECTION  *(point 2)*
 [SHOW] Slide: a Devanagari transcript turn → two labels ("triage band" + "doctor-signed SOAP").
 [SAY] "Our approach to data: the conversation *is* the dataset. Every call is captured turn-by-turn, natively in Devanagari and Tamil script, code-switching preserved, PII-redacted. And every call is labeled twice — by our deterministic triage, and, as the gold label, by the real doctor's signed note. So we build a doctor-adjudicated, consented, India-hosted vernacular clinical-speech corpus — collected through ASHA workers at Primary Health Centres, stratified to over-sample the rare emergencies that matter most."
 
 ### 3:00 – 3:55 · DATA PROCESSING + SYSTEM DESIGN  *(point 3 — the 25%+25% slide)*
-[SHOW] The architecture flow: Patient → VAPI → Indic STT → **Safety proxy** → Claude → triage → SOAP → shadow → RMP → callback.
+[SHOW] The architecture flow: Patient → LiveKit (India) → Indic STT → **Safety proxy** → Claude → triage → SOAP → shadow → RMP → callback → follow-up.
 [SAY] "System design — we made the RAG-versus-agent call with *data*, not a slogan. We *built* a hybrid retrieval layer over India's national protocols — IMCI, ICMR, India-PEN — then A/B-tested it on our own eval. Inside the triage decision it *lowered* accuracy with no gain, so we keep retrieval out of the safety-critical path and use it where it helps: grounding the doctor's SOAP note and the shadow differential with cited guidelines. And the whole vernacular voice stack — speech-to-text, text-to-speech, the agent itself — now runs *in India*, on LiveKit; only the PII-redacted reasoning call leaves the country.
 Three guardrails do the heavy lifting: a **three-tier triage** where deterministic rules — BE-FAST, IMCI, silent-MI, sepsis — can only *raise* urgency, never lower it; **hardcoded statutory refusals** for sex-determination, suicide, and prescription requests that the model can't improvise around; and **ICD-10 grounding** that drops any hallucinated code. Every payload is PII-redacted before it leaves India, audited, and prompt-cached — which cuts our LLM cost by about half."
 
 ### 3:55 – 4:40 · EVALS  *(point 4 — the 30% slide; this is where you win)*
 [SHOW] The metrics table + the junior-GP comparison + the cost bar.
 [SAY] "Evals — run live against our deployed triage on twenty-four senior-doctor-adjudicated cases, eighteen of them true emergencies. The metric that matters is emergency sensitivity, and we catch **one hundred percent — eighteen of eighteen.** Band accuracy: one hundred percent. A synthetic junior GP, on the same cases, catches eighty-three percent — and the ones it misses are exactly the atypical presentations that lack a textbook trigger. Our shadow layer gives a ranked top-three differential we score against the signing doctor.
-On unit economics: a full three-minute consult costs **eight rupees seventy-seven** — versus four hundred to fifteen hundred for a video consult — with vernacular speech-to-text under one rupee a minute, and live-voice latency tuned under one-point-four seconds."
+On unit economics: a full three-minute consult costs **single-digit rupees** on the call-back path — about eight, and fourteen on the toll-free path — versus four hundred to fifteen hundred for a video consult, with vernacular speech-to-text under one rupee a minute, and live-voice latency tuned under one-point-four seconds."
 
 ### 4:40 – 5:00 · CLOSE
 [SHOW] Back to the title + the callback line *"डॉक्टर साहब ने देख लिया है"*.
@@ -44,6 +44,21 @@ On unit economics: a full three-minute consult costs **eight rupees seventy-seve
 ## Filming checklist
 - [ ] Do the **live call FIRST**; if a take is messy, the 2 demo cards already in the cockpit are a safe fallback to film the review→sign→callback flow.
 - [ ] Cockpit shows a **named doctor** (not "डॉक्टर साहब") — confirm the RMP is seeded before filming.
+- [ ] Record the live call on `/asha` (the **LiveKit / India** stack). `/asha-vapi` is the preserved fallback only.
 - [ ] Have the metrics slide / `docs/submission/vaani-submission.html` open (print-to-PDF) as B-roll for sections 3–4.
 - [ ] Keep total ≤ 5:00. If tight, trim section 2:25–3:00 first.
-- [ ] Upload the PDF doc alongside the video.
+- [ ] Upload `docs/hackathon-brief-alignment.md` (print-to-PDF) alongside the video.
+
+---
+
+## Alternate take — the gender-neutral-prompt lesson
+*(Optional swap for the 2:25–3:00 vernacular-voice section, if you'd rather lead point 2 with a hard, earned vernacular-data insight than the "conversation is the dataset" framing. ~25s.)*
+
+[SAY] "One vernacular-data lesson you only learn from real calls: Hindi verbs carry the speaker's gender. Our first prompt leaked Vaani's gender within four seconds and broke trust with women patients. So the agent now speaks in object-agreeing infinitives, the plural-formal हम, and impersonal voice — emitting **zero gendered verb forms**. That's the kind of detail that decides whether a rural woman keeps talking."
+
+[SHOW]
+```
+A. "बात करनी है"      (object-agreeing infinitive)
+B. "हम सुन रहे हैं"     (plural-formal हम)
+C. "समझ आ गया"        (impersonal)
+```

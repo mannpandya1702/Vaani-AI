@@ -90,7 +90,7 @@
     <div class="card"><div class="v">100%</div><div class="l">Emergency sensitivity (18/18 RED caught) · live eval</div></div>
     <div class="card"><div class="v">100%</div><div class="l">Triage band exact-match (RED/AMBER/GREEN)</div></div>
     <div class="card"><div class="v">&lt;1.4s</div><div class="l">Target p95 live-voice latency</div></div>
-    <div class="card"><div class="v coral">₹8.77</div><div class="l">Cost / 3-min consult vs ₹400–1,500 video</div></div>
+    <div class="card"><div class="v coral">₹8–14</div><div class="l">Cost / 3-min consult (call-back → toll-free) vs ₹400–1,500 video</div></div>
   </div>
 
   <!-- 1 -->
@@ -122,7 +122,7 @@
   <p><b>Agent-first with deterministic safety rails — and we made the RAG-vs-agent call with data, not assertion.</b> The safety-critical work (rule-based red-flag detection, statutory refusals) must <i>never</i> be left to a model, so it stays a deterministic agent loop, not retrieval. But we <b>built a hybrid RAG layer</b> — in-region <code>gte-small</code> dense + lexical full-text, reciprocal-rank fused — over a curated corpus of Indian national protocols (WHO IMCI, ICMR STW, India PEN, MoHFW) and <b>A/B-tested it against our own eval</b>: inside the triage band decision it <i>regressed</i> accuracy (100%→95.8%) with no gain, so we keep retrieval <b>out of the safety-critical path</b> and use it where it is purely additive — <b>grounding the doctor's SOAP note and the AI shadow differential with cited guidelines</b> (e.g. <code>[ICMR_STW:rural_febrile_workup]</code>). The embeddings never leave India. That is a <i>measured</i> tradeoff, not a deferral. Fine-tuning is the roadmap once the consented corpus is large enough.</p>
   <div class="flow">
     <div class="node"><b>Patient</b><span>web / toll-free, vernacular</span></div><div class="arr">→</div>
-    <div class="node"><b>VAPI</b><span>media · turn-taking</span></div><div class="arr">→</div>
+    <div class="node"><b>LiveKit (India)</b><span>media · turn-taking · ap-south</span></div><div class="arr">→</div>
     <div class="node"><b>Indic STT</b><span>code-switch, &lt;₹1/min</span></div><div class="arr">→</div>
     <div class="node k"><b>Safety proxy</b><span>refusals · PII-redact · audit · cache</span></div><div class="arr">→</div>
     <div class="node"><b>Claude 4.6</b><span>history + reasoning</span></div>
@@ -147,7 +147,7 @@
     <div>
       <h3>Stack &amp; scale</h3>
       <ul>
-        <li>VAPI (web + Exotel PSTN) for the live demo; <b>LiveKit Agents now deployed in ap-south (India)</b> — Sarvam Saarika STT + Bulbul TTS — as the India-resident voice stack. Claude Sonnet 4.6 via a custom-LLM safety proxy.</li>
+        <li><b>LiveKit Agents in ap-south (India)</b> is the live voice stack — Sarvam Saarika STT + Bulbul TTS, in-region. Claude Sonnet 4.6 via a custom-LLM safety proxy; VAPI (web + Exotel PSTN) preserved as a fallback.</li>
         <li>Proxy = <b>PII redaction + cross-border audit + statutory refusals + prompt-caching</b> (≈57% LLM-cost cut).</li>
         <li>Supabase Postgres ap-south-1 + edge functions · multi-tenant RLS · 7-yr retention.</li>
         <li>Residency: <b>LiveKit voice stack live in ap-south today</b> — agent + Sarvam STT/TTS + Postgres all in-India; only the PII-redacted LLM crosses the border → Bedrock ap-south-1 closes that last hop.</li>
@@ -186,7 +186,7 @@
   <h3>Cost per consultation</h3>
   <table>
     <tr><th>Channel</th><th class="r">₹ / consult</th><th>Notes</th></tr>
-    <tr><td><b>Vaani — missed-call, cache-warm</b></td><td class="r ok">₹8.77</td><td>blended ₹2.92/min · vernacular STT under ₹1/min · prompt-cache cuts the live LLM ₹7.77→₹3.33</td></tr>
+    <tr><td><b>Vaani — call-back path</b></td><td class="r ok">~₹8</td><td>vernacular STT under ₹1/min · ~₹14 on the toll-free path · prompt-cache on the proxy cuts the live LLM cost</td></tr>
     <tr><td>Offline rural consult</td><td class="r">₹150–400</td><td>travel + lost wage not counted</td></tr>
     <tr><td>eSanjeevani video consult</td><td class="r">₹400–1,500</td><td>needs smartphone + bandwidth</td></tr>
   </table>
