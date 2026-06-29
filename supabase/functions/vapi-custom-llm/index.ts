@@ -450,6 +450,83 @@ function openaiResponse(text: string, model: string, stream: boolean): Response 
 }
 
 /**
+ * Streaming reasoning-stripper. Some Claude models (notably Sonnet on a long,
+ * instruction-dense clinical prompt) emit a soft chain-of-thought as PLAIN
+ * TEXT wrapped in <thinking>…</thinking> — this is NOT Anthropic's extended-
+ * thinking channel (which we never enable and never forward), it's literal
+ * markup in the text block. Because every text_delta is streamed to Sarvam
+ * TTS, that monologue gets SPOKEN to the patient (the "Vaani read her thoughts
+ * aloud" bug — call e9f5002d, turn 23). This filter removes <thinking>/<think>
+ * spans from the live text stream before it ever reaches the voice. It is
+ * stateful and tolerant of a tag arriving split across SSE chunks.
+ */
+const _OPEN_TAG = /<think(?:ing)?\s*>/i;
+const _CLOSE_TAG = /<\/think(?:ing)?\s*>/i;
+const _OPEN_CANDS = ['<thinking>', '<think>'];
+const _CLOSE_CANDS = ['</thinking>', '</think>'];
+
+// Longest suffix of `s` that is a strict prefix of any candidate tag — i.e. how
+// much trailing text must be held back in case a tag is still arriving.
+function _partialTailLen(s: string, cands: string[]): number {
+  const lower = s.toLowerCase();
+  let best = 0;
+  for (const tag of cands) {
+    const max = Math.min(lower.length, tag.length - 1);
+    for (let k = max; k > best; k--) {
+      if (tag.startsWith(lower.slice(lower.length - k))) { best = k; break; }
+    }
+  }
+  return best;
+}
+
+class ReasoningStripper {
+  private hold = '';
+  private inThinking = false;
+
+  feed(chunk: string): string {
+    this.hold += chunk;
+    let out = '';
+    for (;;) {
+      if (!this.inThinking) {
+        const m = _OPEN_TAG.exec(this.hold);
+        if (m) {
+          out += this.hold.slice(0, m.index);
+          this.hold = this.hold.slice(m.index + m[0].length);
+          this.inThinking = true;
+          continue;
+        }
+        // No complete open tag: emit everything except a tail that could be a
+        // partial '<thinking>' still arriving (so we never speak half a tag).
+        const keep = _partialTailLen(this.hold, _OPEN_CANDS);
+        out += this.hold.slice(0, this.hold.length - keep);
+        this.hold = this.hold.slice(this.hold.length - keep);
+        return out;
+      }
+      const c = _CLOSE_TAG.exec(this.hold);
+      if (c) {
+        this.hold = this.hold.slice(c.index + c[0].length);
+        this.inThinking = false;
+        continue;
+      }
+      // Inside a thinking block: discard everything except a possible partial
+      // closing tag we might still be mid-receiving. `hold` stays bounded.
+      const keep = _partialTailLen(this.hold, _CLOSE_CANDS);
+      this.hold = this.hold.slice(this.hold.length - keep);
+      return out;
+    }
+  }
+
+  // Stream ended: drop an unclosed thinking block; otherwise release whatever
+  // is held, unless it's a dangling partial tag (never speak a stray "<thi…").
+  flush(): string {
+    if (this.inThinking) { this.hold = ''; return ''; }
+    const out = this.hold;
+    this.hold = '';
+    return /^<\/?think/i.test(out) ? '' : out;
+  }
+}
+
+/**
  * Translate Anthropic's `messages` SSE stream into OpenAI's
  * chat.completion.chunk SSE stream that VAPI consumes.
  *
@@ -473,6 +550,8 @@ function anthropicSseToOpenAiSse(input: ReadableStream<Uint8Array>): ReadableStr
   let stopReason: 'stop' | 'tool_calls' = 'stop';
   const blockToToolIdx = new Map<number, number>();
   let toolCount = 0;
+  // Removes any <thinking> monologue from the text before it reaches TTS.
+  const stripper = new ReasoningStripper();
 
   const emit = (controller: ReadableStreamDefaultController, delta: Record<string, unknown>, finish: string | null = null) => {
     if (!firstSent) { delta = { role: 'assistant', ...delta }; firstSent = true; }
@@ -512,10 +591,13 @@ function anthropicSseToOpenAiSse(input: ReadableStream<Uint8Array>): ReadableStr
               const toolIdx = blockToToolIdx.get(data.index) ?? 0;
               emit(controller, { tool_calls: [{ index: toolIdx, function: { arguments: data.delta.partial_json ?? '' } }] });
             } else if (eventName === 'content_block_delta' && data?.delta?.type === 'text_delta') {
-              emit(controller, { content: data.delta.text });
+              const clean = stripper.feed(data.delta.text ?? '');
+              if (clean) emit(controller, { content: clean });
             } else if (eventName === 'message_delta' && data?.delta?.stop_reason === 'tool_use') {
               stopReason = 'tool_calls';
             } else if (eventName === 'message_stop') {
+              const tail = stripper.flush();
+              if (tail) emit(controller, { content: tail });
               controller.enqueue(encoder.encode(
                 `data: ${JSON.stringify({ id, object: 'chat.completion.chunk', created, model: 'claude-sonnet-4-6', choices: [{ index: 0, delta: {}, finish_reason: stopReason }] })}\n\n`,
               ));
