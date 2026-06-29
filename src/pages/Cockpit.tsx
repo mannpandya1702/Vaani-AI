@@ -276,17 +276,28 @@ function TriageQueue() {
     return c;
   }, [rows, tags]);
 
-  const visible = rows.filter((r) => {
-    const signed = !!r.soap?.mo_signed_at;
-    const tag = tags[r.triage.id];
-    switch (filter) {
-      case 'signed': return signed;
-      case 'needs_review': return !signed && tag === 'needs_review';
-      case 'refer': return !signed && tag === 'refer';
-      case 'awaiting': return !signed && !tag;
-      default: return true;
-    }
-  });
+  const BAND_RANK: Record<TriageBand, number> = { RED: 0, AMBER: 1, GREEN: 2 };
+  const visible = rows
+    .filter((r) => {
+      const signed = !!r.soap?.mo_signed_at;
+      const tag = tags[r.triage.id];
+      switch (filter) {
+        case 'signed': return signed;
+        case 'needs_review': return !signed && tag === 'needs_review';
+        case 'refer': return !signed && tag === 'refer';
+        case 'awaiting': return !signed && !tag;
+        default: return true;
+      }
+    })
+    // Worklist order: unsigned before signed, then RED → AMBER → GREEN, then newest first.
+    .sort((a, b) => {
+      const aSigned = a.soap?.mo_signed_at ? 1 : 0;
+      const bSigned = b.soap?.mo_signed_at ? 1 : 0;
+      if (aSigned !== bSigned) return aSigned - bSigned;
+      const band = BAND_RANK[a.triage.band] - BAND_RANK[b.triage.band];
+      if (band !== 0) return band;
+      return new Date(b.triage.created_at).getTime() - new Date(a.triage.created_at).getTime();
+    });
 
   async function quickApprove(row: CockpitRow) {
     if (!row.soap || row.soap.mo_signed_at || busyId) return;
@@ -389,30 +400,29 @@ function TriageQueue() {
         </div>
       )}
 
-      <div className="grid gap-3 md:grid-cols-2">
+      {/* Uniform full-width worklist rows — every card the same size, sorted
+          most-urgent-first so RED floats to the top. RED still stands out via
+          the ring + pulse inside TriageCard, not by being a different size. */}
+      <div className="grid gap-3">
         <AnimatePresence>
-          {visible.map((row) => {
-            const critical = row.triage.band === 'RED' && !row.soap?.mo_signed_at;
-            return (
-              <motion.div
-                key={row.triage.id}
-                layout
-                initial={{ opacity: 0, y: 12, scale: 0.98 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.96 }}
-                className={cn(critical && 'md:col-span-2')}
-              >
-                <TriageCard
-                  row={row}
-                  onClick={() => setOpenRow(row)}
-                  tag={tags[row.triage.id] ?? null}
-                  busy={busyId === row.triage.id}
-                  onApprove={() => quickApprove(row)}
-                  onTag={(t) => tagRow(row, t)}
-                />
-              </motion.div>
-            );
-          })}
+          {visible.map((row) => (
+            <motion.div
+              key={row.triage.id}
+              layout
+              initial={{ opacity: 0, y: 12, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.96 }}
+            >
+              <TriageCard
+                row={row}
+                onClick={() => setOpenRow(row)}
+                tag={tags[row.triage.id] ?? null}
+                busy={busyId === row.triage.id}
+                onApprove={() => quickApprove(row)}
+                onTag={(t) => tagRow(row, t)}
+              />
+            </motion.div>
+          ))}
         </AnimatePresence>
       </div>
 
