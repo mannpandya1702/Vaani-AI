@@ -103,6 +103,8 @@ export interface CockpitRow {
     preferred_language: string;
     pregnancy_status: string | null;
     village_name: string | null;
+    allergies: string[] | null;
+    chronic_conditions: string[] | null;
   };
   // AI Shadow Diagnosis (Stage 3) — a separate AI clinical opinion, generated
   // before the RMP reviews. The doctor remains the final authority.
@@ -1203,6 +1205,8 @@ export interface PatientRecord {
   village_name: string | null;
   preferred_language: string;
   pregnancy_status: string | null;
+  allergies: string[] | null;
+  chronic_conditions: string[] | null;
   latestBand: TriageBand;
   latestAt: string;
   signed: boolean;          // latest encounter signed?
@@ -1225,6 +1229,8 @@ export function aggregatePatients(rows: CockpitRow[]): PatientRecord[] {
         village_name: r.patient.village_name,
         preferred_language: r.patient.preferred_language ?? 'hi',
         pregnancy_status: r.patient.pregnancy_status,
+        allergies: r.patient.allergies,
+        chronic_conditions: r.patient.chronic_conditions,
         latestBand: r.triage.band,
         latestAt: r.triage.created_at,
         signed: !!r.soap?.mo_signed_at,
@@ -1238,6 +1244,8 @@ export function aggregatePatients(rows: CockpitRow[]): PatientRecord[] {
       prev.sex ??= r.patient.sex;
       prev.village_name ??= r.patient.village_name;
       prev.pregnancy_status ??= r.patient.pregnancy_status;
+      prev.allergies ??= r.patient.allergies;
+      prev.chronic_conditions ??= r.patient.chronic_conditions;
       if (r.triage.created_at > prev.latestAt) {
         prev.latestAt = r.triage.created_at;
         prev.latestBand = r.triage.band;
@@ -1391,15 +1399,40 @@ function PatientProfileDialog({ patient, onClose }: { patient: PatientRecord | n
               <ProfileField label="Pregnancy" value={p.pregnancy_status && p.pregnancy_status !== 'not_pregnant' ? p.pregnancy_status : null} icon={Baby} />
             </div>
 
-            {/* Clinical flags (TB / chronic / allergies) — empty states where unmodelled */}
+            {/* Clinical flags — real values captured by the intake agent.
+                null = never asked (honest empty state); [] = asked, none reported. */}
             <div className="grid sm:grid-cols-2 gap-3">
               <div>
                 <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1 flex items-center gap-1.5"><AlertTriangle className="w-3.5 h-3.5" /> Allergies</div>
-                <EmptyState>Not recorded yet — the intake agent will capture allergies as history builds.</EmptyState>
+                {p.allergies == null ? (
+                  <EmptyState>Not recorded yet.</EmptyState>
+                ) : p.allergies.length === 0 ? (
+                  <EmptyState>None reported.</EmptyState>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5">
+                    {p.allergies.map((a) => (
+                      <span key={a} className="inline-flex items-center gap-1 rounded-full bg-red-500/10 text-red-700 dark:text-red-300 px-2 py-0.5 text-xs font-medium">
+                        <AlertTriangle className="w-3 h-3" /> {a}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
               <div>
                 <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1 flex items-center gap-1.5"><HeartPulse className="w-3.5 h-3.5" /> Chronic diseases</div>
-                <EmptyState>Not recorded yet.</EmptyState>
+                {p.chronic_conditions == null ? (
+                  <EmptyState>Not recorded yet.</EmptyState>
+                ) : p.chronic_conditions.length === 0 ? (
+                  <EmptyState>None reported.</EmptyState>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5">
+                    {p.chronic_conditions.map((c) => (
+                      <span key={c} className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 text-amber-700 dark:text-amber-300 px-2 py-0.5 text-xs font-medium">
+                        <HeartPulse className="w-3 h-3" /> {c}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 

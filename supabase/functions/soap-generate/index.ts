@@ -111,6 +111,9 @@ const SOAP_TOOL = {
       patient_age_years: { type: 'integer', minimum: 0, maximum: 120, description: 'Age the patient stated, else omit' },
       patient_sex: { type: 'string', enum: ['M', 'F', 'Other', 'Unknown'], description: 'Sex the patient stated/implied, else Unknown' },
       patient_pregnancy_status: { type: 'string', enum: ['not_pregnant', 'pregnant', 'postpartum', 'unknown'], description: 'Only if discussed, else unknown' },
+      patient_village: { type: 'string', description: 'Village/locality the patient stated when asked, else omit. Never guess.' },
+      patient_allergies: { type: 'array', items: { type: 'string' }, description: 'Allergies the patient stated (drug/food/other), e.g. ["penicillin"]. Empty array [] if they were asked and reported none. Omit entirely if allergies were never discussed.' },
+      patient_chronic_conditions: { type: 'array', items: { type: 'string' }, description: 'Chronic conditions the patient stated, e.g. ["diabetes","hypertension"]. Empty array [] if asked and none. Omit if never discussed.' },
     },
     required: [
       'subjective', 'objective', 'assessment', 'plan',
@@ -176,7 +179,7 @@ Deno.serve(async (req) => {
 
   const { data: patient } = await sb
     .from('patients')
-    .select('full_name, phone_e164, abha_id, village_name, age_years, sex, pregnancy_status, preferred_language')
+    .select('full_name, phone_e164, abha_id, village_name, age_years, sex, pregnancy_status, preferred_language, allergies, chronic_conditions')
     .eq('id', call.patient_id)
     .single();
   const lang = (patient?.preferred_language ?? call.lang_detected ?? call.lang_declared ?? 'hi') as string;
@@ -351,6 +354,23 @@ Deno.serve(async (req) => {
     const exPreg = soap.patient_pregnancy_status;
     if (patient?.pregnancy_status == null && typeof exPreg === 'string' && ['not_pregnant', 'pregnant', 'postpartum'].includes(exPreg)) {
       demoUpdate.pregnancy_status = exPreg;
+    }
+    // Village + structured allergies/chronic-conditions (same fill-only-if-null
+    // rule). Arrays: '{}' (asked, none) is a real answer worth persisting, so we
+    // gate on Array.isArray, not length — but only overwrite a NULL column.
+    const exVillage = soap.patient_village;
+    if (patient?.village_name == null && typeof exVillage === 'string' && exVillage.trim()) {
+      demoUpdate.village_name = exVillage.trim().slice(0, 80);
+    }
+    const cleanList = (v: unknown) =>
+      Array.isArray(v) ? [...new Set(v.map((s) => String(s).trim()).filter(Boolean))].slice(0, 20) : null;
+    const exAllergies = cleanList(soap.patient_allergies);
+    if (patient?.allergies == null && exAllergies != null) {
+      demoUpdate.allergies = exAllergies;
+    }
+    const exChronic = cleanList(soap.patient_chronic_conditions);
+    if (patient?.chronic_conditions == null && exChronic != null) {
+      demoUpdate.chronic_conditions = exChronic;
     }
     // Name: overwrite ONLY a system placeholder ("Anonymous web caller · …")
     // with the name the caller actually stated — so the cockpit shows who

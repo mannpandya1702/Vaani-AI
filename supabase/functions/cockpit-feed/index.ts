@@ -59,7 +59,7 @@ Deno.serve(async (req) => {
       .select('id, started_at, ended_at, channel, lang_detected')
       .in('id', callIds),
     sb.from('patients')
-      .select('id, full_name, phone_e164, age_years, sex, preferred_language, pregnancy_status, village_name')
+      .select('id, full_name, phone_e164, age_years, sex, preferred_language, pregnancy_status, village_name, allergies, chronic_conditions')
       .in('id', patientIds),
     sb.from('shadow_diagnoses')
       .select('id, call_id, differential_diagnoses, recommended_tests, recommended_medications, referral_recommended, referral_reason, urgency, missing_information, red_flag_urgency_override, doctor_action, doctor_referral_decision, doctor_urgency, doctor_notes, doctor_decided_at, generated_at')

@@ -2547,6 +2547,8 @@ export type Database = {
           abha_address: string | null
           abha_id: string | null
           age_years: number | null
+          allergies: string[] | null
+          chronic_conditions: string[] | null
           created_at: string
           date_of_birth: string | null
           display_initial: string | null
@@ -2572,6 +2574,8 @@ export type Database = {
           abha_address?: string | null
           abha_id?: string | null
           age_years?: number | null
+          allergies?: string[] | null
+          chronic_conditions?: string[] | null
           created_at?: string
           date_of_birth?: string | null
           display_initial?: string | null
@@ -2597,6 +2601,8 @@ export type Database = {
           abha_address?: string | null
           abha_id?: string | null
           age_years?: number | null
+          allergies?: string[] | null
+          chronic_conditions?: string[] | null
           created_at?: string
           date_of_birth?: string | null
           display_initial?: string | null
